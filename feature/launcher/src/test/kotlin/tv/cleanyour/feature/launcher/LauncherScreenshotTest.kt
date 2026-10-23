@@ -14,6 +14,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import tv.cleanyour.core.flows.AppChoice
 import tv.cleanyour.core.flows.Busy
+import tv.cleanyour.core.flows.ButtonCapture
+import tv.cleanyour.core.flows.RemoteButton
 import tv.cleanyour.core.flows.HomeScreenState
 import tv.cleanyour.core.flows.ThemeOption
 import tv.cleanyour.core.model.Op
@@ -46,12 +48,16 @@ private val themes = listOf(
 
 private fun home(
     themeId: String? = null, drift: Boolean = false, busy: Busy? = null, stock: Boolean = true, ours: Boolean = true, dock: List<AppChoice> = defaultDock,
-    updateTo: String? = null,
+    updateTo: String? = null, buttons: List<RemoteButton>? = null, capture: ButtonCapture? = null,
 ) = HomeScreenState(
     tvName = "Mi TV 4A", dock = dock, apps = apps, themeId = themeId, themes = themes, drift = drift,
     stock = if (stock) Samples.stockLauncher else null, busy = busy, homeScreenOurs = ours, updateTo = updateTo,
     tvSideSettings = updateTo == null,   // a TV still on launcher 2.0 (an update offered) has no Launcher settings
+    buttons = buttons.orEmpty(), buttonsSupported = buttons != null, capture = capture,   // Remote buttons: launcher 2.6 and later
 )
+
+// Remote buttons mapped on a Xiaomi remote: its YouTube button (KEY_PRESENTATION) and its TV button (KEY_WWW).
+private val mapped = listOf(RemoteButton(425, apps[1]), RemoteButton(150, apps[4]))
 
 // D4 "Update the home screen": the plan's narration lines are the preview's list.
 private val updatePlan = Samples.plan(
@@ -83,6 +89,7 @@ object LauncherShots {
         Shot("home_empty_dock") { HomeScreen(home(dock = emptyList()), {}, {}) },
         Shot("home_dock_rows") { HomeScreen(home(dock = rowsDock), {}, {}) },
         Shot("home_update_available") { HomeScreen(home(updateTo = "2.4"), {}, {}) },
+        Shot("home_buttons_row") { HomeScreen(home(buttons = mapped), {}, {}) },
 
         // Look (theme picker), the dock sheet (S3b on Manage) and the stock home screen preview
         Shot("home_look_sheet") { SheetOver({ HomeScreen(home(), {}, {}) }) { LookContent(home(themeId = "aurora")) {} } },
@@ -93,6 +100,13 @@ object LauncherShots {
         Shot("home_dock_sheet_new_row", 1200.dp) { SheetOver({ HomeScreen(home(), {}, {}) }) { DockContent(dockState(defaultDock, addRow = true), apps, {}) } },
         Shot("home_stock_preview") { SheetOver({ HomeScreen(home(), {}, {}) }) { StockPreviewContent(stockPlan) {} } },
         Shot("home_update_preview") { SheetOver({ HomeScreen(home(updateTo = "2.4"), {}, {}) }) { UpdatePreviewContent(updatePlan, "2.4") {} } },
+
+        // Remote buttons: none yet, two mapped, waiting for a press, choosing an app, and a shared button
+        Shot("buttons_sheet_empty") { SheetOver({ HomeScreen(home(buttons = emptyList()), {}, {}) }) { RemoteButtonsContent(home(buttons = emptyList())) {} } },
+        Shot("buttons_sheet_mapped") { SheetOver({ HomeScreen(home(buttons = mapped), {}, {}) }) { RemoteButtonsContent(home(buttons = mapped)) {} } },
+        Shot("buttons_sheet_waiting") { SheetOver({ HomeScreen(home(buttons = mapped), {}, {}) }) { RemoteButtonsContent(home(buttons = mapped, capture = ButtonCapture.Waiting)) {} } },
+        Shot("buttons_sheet_choose", 1000.dp) { SheetOver({ HomeScreen(home(buttons = emptyList()), {}, {}) }) { RemoteButtonsContent(home(buttons = emptyList(), capture = ButtonCapture.Pressed(216))) {} } },
+        Shot("buttons_sheet_shared") { SheetOver({ HomeScreen(home(buttons = emptyList()), {}, {}) }) { RemoteButtonsContent(home(buttons = emptyList(), capture = ButtonCapture.Shared)) {} } },
     )
 }
 
