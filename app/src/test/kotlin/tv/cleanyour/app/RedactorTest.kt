@@ -37,4 +37,25 @@ class RedactorTest {
         assertFalse("G070VM1234567" in pause)
         assertFalse("192.168.1.20" in pause)
     }
+
+    // 0.3.3 D3 (issue #10): an address is four octets of 0 to 255 standing on their own. Build
+    // strings and fingerprints from real reports stay whole; real addresses still go.
+    @Test fun buildStringsStayWholeAndAddressesGo() {
+        val whole = listOf(
+            "V816.0.11.0.UZFAABX",
+            "UKG3.250107.001",
+            "Xiaomi/jaws/jaws:14/UKG3.250107.001/V816.0.11.0.UZFAABX:user/release-keys",          // issue #10
+            "AURZEN/AURZEN_BOOMAIR/himalaya:11/RTMA.250416.043/13549864:user/release-keys",       // issue #9
+            "Haier/nippori/nippori:11/RTO5.250812.001/13924387:user/release-keys",                // issue #11
+            "Smarttech/SMARTTECH_4K_ATV3/marina:11/RTMA.250416.028/13485761:user/release-keys",   // issue #15
+            "version 1.2.3.4.5", "v1.2.3.4", "256.1.1.1", "192.168.1.2555",
+        )
+        for (s in whole) assertEquals(s, Redactor.redact(s))
+        assertEquals("x.x.x.195", Redactor.redact("192.168.0.195"))
+        assertEquals("x.x.x.5:5555", Redactor.redact("10.0.0.5:5555"))
+        assertEquals("addr x.x.x.2,", Redactor.redact("addr 172.16.4.2,"))
+        // The dot that ends a sentence is not part of a build string.
+        assertEquals("connect failed from x.x.x.20.", Redactor.redact("connect failed from 192.168.1.20."))
+        assertEquals("[x.x.x.1] (x.x.x.9)", Redactor.redact("[192.168.1.1] (10.0.0.9)"))
+    }
 }

@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import tv.cleanyour.core.model.GroupDefault
 import tv.cleanyour.core.model.Level
+import tv.cleanyour.core.model.Op
 import tv.cleanyour.core.model.PackageGroup
 import tv.cleanyour.core.model.PackageName
 import tv.cleanyour.core.model.TvId
@@ -75,10 +76,15 @@ class SwitchedOffMachine(
             send(BusyOn(null))
             load()
             when (r) {
-                // RF-LAUNCHER-250 F1: kept because it runs the TV's inputs; nothing to undo.
-                is WriteResult.Done -> if (kind == SnackKind.SWITCHED_OFF && r.finished.skipped.isNotEmpty() && d.ledger.keptTvInputs(r.plan.id).isNotEmpty())
-                    effect(ManageEffect.Snackbar(SnackKind.KEPT_TV_INPUT, d.nameOf(pkg), false))
-                else effect(ManageEffect.Snackbar(kind, d.nameOf(pkg), undo, pkg))
+                // A switch-off the run skipped changed nothing, so there is nothing to undo:
+                // RF-LAUNCHER-250 F1, kept because it runs the TV's inputs; otherwise the TV kept it
+                // on (issue #10) and the line is Done's "wouldn't switch off; it's harmless".
+                is WriteResult.Done -> effect(when {
+                    kind != SnackKind.SWITCHED_OFF || r.finished.skipped.none { (it.op as? Op.Disable)?.pkg == pkg } ->
+                        ManageEffect.Snackbar(kind, d.nameOf(pkg), undo, pkg)
+                    d.ledger.keptTvInputs(r.plan.id).isNotEmpty() -> ManageEffect.Snackbar(SnackKind.KEPT_TV_INPUT, d.nameOf(pkg), false)
+                    else -> ManageEffect.Snackbar(SnackKind.KEPT_ON, d.nameOf(pkg), false)
+                })
                 WriteResult.GateCancelled, WriteResult.NoTv, is WriteResult.Paused -> {}   // Paused: the open-run card shows (O2)
                 else -> effect(ManageEffect.Snackbar(SnackKind.FAILED, d.nameOf(pkg), false))
             }

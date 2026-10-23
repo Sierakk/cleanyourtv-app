@@ -61,9 +61,11 @@ or uninstalling it in Android's settings.
 itself. Each one shows you the whole report first, as plain text, and then does only what you tap:
 
 - **Share** opens Android's share sheet and you pick where it goes (a message, an email, a note).
-- **Copy and open GitHub** copies the report to your phone's clipboard and opens the GitHub form
-  for it in your browser. The app makes no request itself, and nothing is posted until you paste
-  the report and post the form. A GitHub issue is public.
+- **Open GitHub** (or **Copy and open GitHub**) copies the report to your phone's clipboard and
+  opens the GitHub form for it in your browser. When the report is short enough, it is also part of
+  the form's link, so the form opens with it filled in; your browser sends that link to GitHub when
+  it opens the page, and may keep it in its history. The app makes no request itself, and nothing
+  is posted until you post the form. A GitHub issue is public.
 
 Or you close the screen and nothing happens. "Report a problem" holds the app's own log with
 network addresses, serial numbers, keys and pairing codes removed, and a short summary of the TV.

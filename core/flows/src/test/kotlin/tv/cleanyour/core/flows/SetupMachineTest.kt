@@ -1084,13 +1084,18 @@ class SetupMachineTest {
             val h = Harness()
             h.sessions.allowPromptFor[HOST] = "AB:CD:7F:2A"
             h.prober.facts = c.facts
+            val profile = c.profile?.let { assertNotNull(shipped[it], it) }   // as shipped: the streamer and kalley-43g200 list no stock home
+            // The profile's own stock home answers Home (issue #8: a TV whose stock home is not a
+            // claimant gets the clean-up alone, UNKNOWN_HOME, before any of these risks).
+            val stock = profile?.stockLaunchers?.firstOrNull() ?: Samples.stockLauncher
             h.prober.snapshotFor = { r ->
                 Samples.miTvSnapshot(reason = r).let { s ->
-                    if (c.wizardOn) s.copy(packages = s.packages + (wizard to tv.cleanyour.core.model.PackageState(tv.cleanyour.core.model.EnabledState.ENABLED, true, 1, null, false, false, null, false)))
-                    else s.copy(packages = s.packages - wizard)
+                    val withStock = s.copy(packages = s.packages + (stock.pkg to tv.cleanyour.core.model.PackageState(tv.cleanyour.core.model.EnabledState.ENABLED, true, 1, null, false, false, null, false)),
+                        home = tv.cleanyour.core.model.HomeResolution(stock, listOf(tv.cleanyour.core.model.HomeClaimant(stock, 2))))
+                    if (c.wizardOn) withStock.copy(packages = withStock.packages + (wizard to tv.cleanyour.core.model.PackageState(tv.cleanyour.core.model.EnabledState.ENABLED, true, 1, null, false, false, null, false)))
+                    else withStock.copy(packages = withStock.packages - wizard)
                 }.let { it.copy(contentHash = tv.cleanyour.core.store.SnapshotCodec.hash(it)) }
             }
-            val profile = c.profile?.let { assertNotNull(shipped[it], it) }   // as shipped: the streamer and kalley-43g200 list no stock home
             h.profiles.resolver = { _, _ -> profile?.let { tv.cleanyour.core.spec.ProfileResolution.Exact(it) } ?: tv.cleanyour.core.spec.ProfileResolution.None(listOf(Samples.stockLauncher)) }
             val m = SetupMachine(h.setupDeps(savedWifi = { c.wifi }), backgroundScope, SetupStart.Fresh)
             toFound(h, m)
@@ -1243,5 +1248,190 @@ class SetupMachineTest {
         m.dispatch(SetupIntent.StopAction(StopAction.SECONDARY)); settle()
         assertEquals(StopCase.STEP_FAILED, assertIs<SetupState.Stopped>(m.state.value).card.case)
         assertEquals(2, h.logLines.count { it.startsWith("setup: run paused") }, h.logLines.joinToString("\n"))
+    }
+
+    // Issue #8 (TCL G07, exact profile tcl-g07-google-tv): launcherx, the profile's stock home, is
+    // switched off and Home answers to a launcher the person installed. 0.3.2 asked the planner for
+    // the switch, the planner found no stock home among the claimants and refused the whole plan
+    // ("plan refused" after every probe). Now the wizard asks the planner's StockHome first: the
+    // home screen was already changed, so S3 says so and the real planner makes the clean-up alone.
+    @Test fun issue8AHomeScreenAlreadyChangedGetsTheCleanUpAlone() = runTest(timeout = 30.seconds) {
+        val h = Harness()
+        h.sessions.allowPromptFor[HOST] = "AB:CD:7F:2A"
+        h.prober.facts = tv.cleanyour.testing.fixtures.Issue033.g07Facts()
+        h.prober.snapshotFor = { r -> tv.cleanyour.testing.fixtures.Issue033.g07Snapshot(r) }
+        val source = tv.cleanyour.core.spec.BundledProfileSource()
+        h.profiles.resolver = { f, _ -> source.resolveNow(f) }
+        val planner = tv.cleanyour.core.planner.DefaultPlanner(h.clock, tv.cleanyour.testing.fixtures.FakeIdGen(), tv.cleanyour.core.ops.ShellRenderer(),
+            tv.cleanyour.testing.fixtures.FakeConfigTransport(), "0.3.3")
+        h.planner.respond = { request, snap -> planner.plan(request, snap, h.facts, emptyList()) }
+        val m = h.setup(backgroundScope)
+        toFound(h, m)
+        val found = assertIs<SetupState.Found>(m.state.value, h.logLines.joinToString("\n"))
+        assertEquals(HomeBlock.HOME_CHANGED, m.extras.value.homeBlock)
+        assertFalse(m.extras.value.homePossible)
+        val setup = h.planner.requests.filterIsInstance<PlanRequest.Setup>().last()
+        assertIs<tv.cleanyour.core.spec.ProfileResolution.Exact>(setup.resolution)
+        assertFalse(setup.choices.takeover)
+        assertFalse(setup.choices.installLauncher)
+        assertTrue(found.plan.sections.isEmpty())
+        assertTrue(found.plan.steps.none { it.op == Op.Disable(tv.cleanyour.testing.fixtures.Issue033.personsLauncher.pkg) })
+        assertTrue(h.logLines.none { it == "setup: plan refused" }, h.logLines.joinToString("\n"))
+        assertTrue(h.logLines.any { it == "setup: home switch blocked HOME_CHANGED" }, h.logLines.joinToString("\n"))
+        // The same TV with launcherx still a claimant gets the switch as before.
+        val h2 = Harness()
+        h2.sessions.allowPromptFor[HOST] = "AB:CD:7F:2A"
+        h2.prober.facts = tv.cleanyour.testing.fixtures.Issue033.g07Facts()
+        val lx = tv.cleanyour.testing.fixtures.Issue033.launcherx
+        h2.prober.snapshotFor = { r ->
+            tv.cleanyour.testing.fixtures.Issue033.g07Snapshot(r).let { snap ->
+                snap.copy(packages = snap.packages + (lx.pkg to snap.packages.getValue(lx.pkg).copy(enabled = tv.cleanyour.core.model.EnabledState.ENABLED)),
+                    home = tv.cleanyour.core.model.HomeResolution(lx, listOf(tv.cleanyour.core.model.HomeClaimant(lx, 2)) + snap.home.claimants))
+            }
+        }
+        h2.profiles.resolver = { f, _ -> source.resolveNow(f) }
+        val m2 = SetupMachine(h2.setupDeps(savedWifi = { tv.cleanyour.core.probe.SavedWifi(listed = true, networks = 1, owners = setOf("android.uid.system:1000")) }), backgroundScope)
+        toFound(h2, m2)
+        assertEquals(HomeBlock.NONE, m2.extras.value.homeBlock)
+    }
+
+    // Issue #15 (a Smarttech set no profile knows, the switch blocked): nothing to switch off and no
+    // home switch. Done says plainly that nothing was changed, never "Your TV is ready".
+    @Test fun issue15ARunThatChangedNothingSaysSoOnDone() = runTest(timeout = 30.seconds) {
+        val h = Harness()
+        h.sessions.allowPromptFor[HOST] = "AB:CD:7F:2A"
+        h.setupPlan = h.plan(emptyList())
+        val m = h.setup(backgroundScope)
+        toFound(h, m)
+        m.dispatch(SetupIntent.MakeItClean); settle()
+        val done = assertIs<SetupState.Done>(m.state.value)
+        assertEquals(0, done.summary.switchedOff)
+        assertTrue(m.extras.value.doneNothing)
+        // A run that switched things off is not "nothing".
+        val h2 = Harness()
+        h2.sessions.allowPromptFor[HOST] = "AB:CD:7F:2A"
+        val m2 = h2.setup(backgroundScope)
+        toFound(h2, m2)
+        m2.dispatch(SetupIntent.MakeItClean); settle()
+        assertEquals(2, assertIs<SetupState.Done>(m2.state.value).summary.switchedOff)
+        assertFalse(m2.extras.value.doneNothing)
+    }
+
+    // Issue #10: the finish line names the switch-offs the run skipped, so a report shows what stayed on.
+    @Test fun theFinishLineNamesTheSkippedSwitchOffs() = runTest(timeout = 30.seconds) {
+        val h = Harness()
+        h.sessions.allowPromptFor[HOST] = "AB:CD:7F:2A"
+        h.engine.onStart = { p -> emit(p.tvId, RunState.Finished(p, RunStatus.COMPLETED_WITH_SKIPS, listOf(p.steps[0]), null)) }
+        val m = h.setup(backgroundScope)
+        toFound(h, m)
+        m.dispatch(SetupIntent.MakeItClean); settle()
+        assertIs<SetupState.Done>(m.state.value)
+        assertTrue(h.logLines.any { it == "setup: run finished COMPLETED_WITH_SKIPS, 1 skipped: Disable ${adPkg.value}" }, h.logLines.joinToString("\n"))
+        assertFalse(m.extras.value.doneNothing)
+    }
+
+    // 0.3.3: which "nothing was changed" body Done shows. Every planned switch-off stayed on (the TV
+    // kept them, issue #10) on a TV without an exact list: never "We weren't sure about anything",
+    // which is only for a plan with nothing to switch off there.
+    @Test fun doneSaysEverythingStayedOnWhenTheTvKeptEverySwitchOff() = runTest(timeout = 30.seconds) {
+        val h = Harness()
+        h.sessions.allowPromptFor[HOST] = "AB:CD:7F:2A"
+        h.profiles.resolver = { _, _ -> tv.cleanyour.core.spec.ProfileResolution.None(listOf(Samples.stockLauncher)) }
+        h.engine.onStart = { p -> emit(p.tvId, RunState.Finished(p, RunStatus.COMPLETED_WITH_SKIPS, p.steps, null)) }
+        val m = h.setup(backgroundScope)
+        toFound(h, m)
+        assertTrue(m.extras.value.unknownModel)
+        m.dispatch(SetupIntent.MakeItClean); settle()
+        val done = assertIs<SetupState.Done>(m.state.value)
+        assertEquals(0, done.summary.switchedOff)
+        assertTrue(m.extras.value.doneNothing)
+        assertEquals(NothingWhy.KEPT_ON, m.extras.value.doneNothingWhy)
+        // Nothing planned on the same TV: the "not sure" body.
+        val h2 = Harness()
+        h2.sessions.allowPromptFor[HOST] = "AB:CD:7F:2A"
+        h2.profiles.resolver = { _, _ -> tv.cleanyour.core.spec.ProfileResolution.None(listOf(Samples.stockLauncher)) }
+        h2.setupPlan = h2.plan(emptyList())
+        val m2 = h2.setup(backgroundScope)
+        toFound(h2, m2)
+        m2.dispatch(SetupIntent.MakeItClean); settle()
+        assertTrue(m2.extras.value.doneNothing && m2.extras.value.unknownModel)
+        assertEquals(NothingWhy.NOTHING_PLANNED, m2.extras.value.doneNothingWhy)
+    }
+
+    // N5: "Stop here" with no step done counts what the ledger shows, never the plan's switch-offs.
+    @Test fun stopHereWithNothingDoneSwitchedNothingOff() = runTest(timeout = 30.seconds) {
+        val h = Harness()
+        h.sessions.allowPromptFor[HOST] = "AB:CD:7F:2A"
+        h.engine.onStart = { p -> emit(p.tvId, RunState.Paused(p, 0, PauseReason.STEP_FAILED, AdbError.NonZeroExit(1, "refused"))) }
+        val m = h.setup(backgroundScope)
+        toFound(h, m)
+        m.dispatch(SetupIntent.MakeItClean); settle()
+        assertEquals(StopCase.STEP_FAILED, assertIs<SetupState.Stopped>(m.state.value).card.case)
+        m.dispatch(SetupIntent.StopAction(StopAction.SECONDARY)); settle()
+        val done = assertIs<SetupState.Done>(m.state.value)
+        assertEquals(0, done.summary.switchedOff, "the plan had 2 switch-offs, none done")
+        assertTrue(m.extras.value.doneNothing)
+        assertEquals(NothingWhy.STOPPED, m.extras.value.doneNothingWhy)
+    }
+
+    // N4: the TV curtain comes and goes, but when this run installed it and its removal failed it is
+    // still on the TV, so the run did change something.
+    @Test fun aCurtainLeftOnTheTvIsAChange() = runTest(timeout = 30.seconds) {
+        val curtainPkg = PackageName(tv.cleanyour.core.planner.DefaultPlanner.CURTAIN_PACKAGE)
+        val blob = BlobRef(Samples.zeroHash, 49_571, "bundled:cleanyourtv-curtain.apk")
+        suspend fun kotlinx.coroutines.test.TestScope.curtainRun(removed: Boolean): SetupExtras {
+            val h = Harness()
+            h.sessions.allowPromptFor[HOST] = "AB:CD:7F:2A"
+            val base = h.plan(listOf(Op.InstallStream(blob, blob.sha256, curtainPkg, 1, Samples.zeroHash), Op.Uninstall(curtainPkg)))
+            h.setupPlan = base.copy(steps = base.steps.map { it.copy(group = tv.cleanyour.core.planner.DefaultPlanner.GROUP_CURTAIN) })
+            h.engine.onStart = { p ->
+                h.journal.append(JournalRecord.PlanStart(p.id, p.tvId, Samples.zeroHash, p.steps.size, p.hash, "0.1.0", 0))
+                h.journal.append(JournalRecord.Begin(p.id, 0, p.steps[0].op, listOf("fake"), null, 1))
+                h.journal.append(JournalRecord.Done(p.id, 0, 0, true, 1))
+                h.journal.append(JournalRecord.Begin(p.id, 1, p.steps[1].op, listOf("fake"), null, 2))
+                if (removed) h.journal.append(JournalRecord.Done(p.id, 1, 0, true, 1))
+                else h.journal.append(JournalRecord.Failed(p.id, 1, 1, "exit 1", "Failure [DELETE_FAILED_INTERNAL_ERROR]"))
+                emit(p.tvId, RunState.Finished(p, if (removed) RunStatus.COMPLETED else RunStatus.COMPLETED_WITH_SKIPS, if (removed) emptyList() else listOf(p.steps[1]), null))
+            }
+            val m = h.setup(backgroundScope)
+            toFound(h, m)
+            m.dispatch(SetupIntent.MakeItClean); settle()
+            assertIs<SetupState.Done>(m.state.value)
+            return m.extras.value
+        }
+        assertTrue(curtainRun(removed = true).doneNothing, "the curtain came and went")
+        assertFalse(curtainRun(removed = false).doneNothing, "the curtain is still on the TV")
+    }
+
+    // S3: our own new home screen is never the person's launcher (the probe reads installedByUs
+    // false for every package). A re-run on the G07 with launcherx switched off and Home on ours gets
+    // the switch and the look, as in 0.3.2, never HOME_CHANGED.
+    @Test fun ourOwnHomeScreenAsHomeIsNeverAHomeScreenChangedByThePerson() = runTest(timeout = 30.seconds) {
+        val h = Harness()
+        h.sessions.allowPromptFor[HOST] = "AB:CD:7F:2A"
+        h.prober.facts = tv.cleanyour.testing.fixtures.Issue033.g07Facts()
+        val ours = Samples.launcherComponent
+        h.prober.snapshotFor = { r ->
+            tv.cleanyour.testing.fixtures.Issue033.g07Snapshot(r).let { snap ->
+                snap.copy(
+                    packages = snap.packages - tv.cleanyour.testing.fixtures.Issue033.personsLauncher.pkg +
+                        (ours.pkg to tv.cleanyour.core.model.PackageState(tv.cleanyour.core.model.EnabledState.ENABLED, false, 1, Samples.zeroHash, false, false, null, false)),
+                    home = tv.cleanyour.core.model.HomeResolution(ours, listOf(tv.cleanyour.core.model.HomeClaimant(ours, 0)) + snap.home.claimants.filter { it.component.pkg != tv.cleanyour.testing.fixtures.Issue033.personsLauncher.pkg }),
+                ).let { it.copy(contentHash = tv.cleanyour.core.store.SnapshotCodec.hash(it)) }
+            }
+        }
+        val source = tv.cleanyour.core.spec.BundledProfileSource()
+        h.profiles.resolver = { f, _ -> source.resolveNow(f) }
+        val planner = tv.cleanyour.core.planner.DefaultPlanner(h.clock, tv.cleanyour.testing.fixtures.FakeIdGen(), tv.cleanyour.core.ops.ShellRenderer(),
+            tv.cleanyour.testing.fixtures.FakeConfigTransport(), "0.3.3")
+        h.planner.respond = { request, snap -> planner.plan(request, snap, h.facts, emptyList()) }
+        val m = SetupMachine(h.setupDeps(savedWifi = { SavedWifi(listed = true, networks = 1, owners = setOf("android.uid.system:1000")) }), backgroundScope)
+        toFound(h, m)
+        assertIs<SetupState.Found>(m.state.value, h.logLines.joinToString("\n"))
+        val setup = h.planner.requests.filterIsInstance<PlanRequest.Setup>().last()
+        assertIs<tv.cleanyour.core.spec.ProfileResolution.Exact>(setup.resolution)
+        assertEquals(HomeBlock.NONE, m.extras.value.homeBlock)
+        assertTrue(setup.choices.installLauncher)
+        assertNotNull(setup.config, "the look is planned")
     }
 }

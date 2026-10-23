@@ -24,6 +24,9 @@ data class TvCard(
     val debugging: DebugState,
     // 0.3.2 B1: no exact profile and a stored snapshot, so "Help add this TV" can make its report.
     val helpAddTv: Boolean = false,
+    // 0.3.3 D2: the new home screen is not on this TV (HomeScreenMachine says why), so the Home
+    // screen row says the TV keeps its own instead of naming a dock.
+    val ownHome: Boolean = false,
 )
 
 data class ManageState(
@@ -79,6 +82,7 @@ class ManageMachine(
                         switchedOff = off, dockNames = home?.dock?.map { d.nameOf(it) }.orEmpty(),
                         restorePointAtMs = latest?.takenAtMs, debugging = tv.debugging,
                         helpAddTv = tv.profileId == null && latest != null,
+                        ownHome = tv.launcher == null && latest != null && Launcher.pkg !in latest.packages,
                     )
                 }
                 send(Loaded(cards))

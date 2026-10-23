@@ -69,7 +69,7 @@ class DefaultPlanner(
     private val renderer: OpRenderer,
     private val configTransport: ConfigTransport,
     private val appVersion: String,
-    private val launcher: Component = Component(PackageName("com.gathin.tvhome"), ".MainActivity"),
+    private val launcher: Component = Component(SwitchOffRule.OUR_LAUNCHER, ".MainActivity"),
     private val confirmWindowMs: Long = 90_000L,
     private val watchdogSeconds: Int = WATCHDOG_SECONDS,
     private val settleSeconds: Int = 15,
@@ -159,26 +159,16 @@ class DefaultPlanner(
         fun planned(op: Op): Boolean = steps.any { it.op == op }
         fun putBackPlanned(pkg: PackageName): Boolean = planned(Op.Enable(pkg)) || planned(Op.DefaultState(pkg))
 
-        // Denylist plus the planner-only rules: Fire OS's own home screens are never switched off
-        // (the firmware refuses it, issue #2), and the TV's own home screens and the setup wizard
-        // are only ever switched off inside the home screen switch (section 3.4).
+        // The rule the engine applies again with live facts (SwitchOffRule, 0.3.3 issue #10), outside
+        // the home screen switch, plus this build's own choice: keepUpdatesOn keeps the updaters.
         fun protectedReason(pkg: PackageName, profile: Profile?, stockLaunchers: List<Component>, groups: List<PackageGroup> = profile?.groups.orEmpty()): String? {
-            Denylist.reason(pkg, state(pkg), profile, snapshot)?.let { return it }
-            if (FireOs.isHome(pkg)) return REASON_FIRE_OS_HOME
-            if (stockLaunchers.any { it.pkg == pkg } || isHomeScreen(pkg)) return REASON_HOME_SCREEN
-            if (pkg.value in Denylist.setupWizards || profile?.setupWraith == pkg) return REASON_WIZARD_SECTION_ONLY
+            SwitchOffRule.reason(pkg, state(pkg), profile, snapshot, stockLaunchers)?.let { return it }
             if (keptUpdater(pkg, groups)) return REASON_UPDATES
             return null
         }
 
         // keepUpdatesOn: a software updater by its name (D22) or by its profile group.
         fun keptUpdater(pkg: PackageName, groups: List<PackageGroup>): Boolean = keepUpdatesOn && ProfileCategory.isUpdater(pkg, groups)
-
-        // The TV's current HOME, whatever it is (R5-W4 O5: PatchWall on an unknown Xiaomi), and every
-        // other HOME claimant: switched off only inside the home screen switch, never by a plain
-        // Setup, SwitchOff or Leftovers (PLAN 6.5: the current HOME resolver is protected).
-        fun isHomeScreen(pkg: PackageName): Boolean =
-            snapshot.home.resolved?.pkg == pkg || snapshot.home.claimants.any { it.component.pkg == pkg }
 
         fun disable(pkg: PackageName, group: String?, policy: FailurePolicy = FailurePolicy.SKIP_IF_REFUSED, narration: String = "Switching off ${name(pkg)}") =
             step(Op.Disable(pkg), Prior(packageState = state(pkg)?.enabled), group, narration, policy)
@@ -459,27 +449,24 @@ class DefaultPlanner(
             val installedAndVerified = current != null && current.signer == artifact.signer
             if (!launcherInstalledByPlan && !installedAndVerified) { refuse("the new home screen is not installed and the plan does not install it"); return }
             if (stockLaunchers.isEmpty()) { refuse("no known home screen for this TV model, so the switch is not possible"); return }
-            // Matched by component first, then by package: only the package of each allowlisted stock
-            // launcher is verified on a real TV for every profile, the class is not. Either way the
-            // component used for SetHome in step R is the claimant the TV itself reported.
+            // The component used for SetHome in step R is the claimant the TV itself reported
+            // (StockHome, shared with SetupMachine's decision to offer the switch, issue #8).
             val claimants = snapshot.home.claimants.map { it.component }
-            val resolved = snapshot.home.resolved
-            fun stockPkg(c: Component) = stockLaunchers.any { it.pkg == c.pkg }
-            val stock = claimants.firstOrNull { it == resolved && it in stockLaunchers }
-                ?: claimants.firstOrNull { it in stockLaunchers }
-                ?: claimants.firstOrNull { it == resolved && stockPkg(it) }
-                ?: claimants.firstOrNull { stockPkg(it) }
+            val stock = StockHome.of(snapshot, stockLaunchers)
             if (stock == null) { refuse("the TV's home screen is not one of the known ones for this model (issue #85)"); return }
             // Never a section around a Fire OS home: its switch-off and its step R Enable are both refused.
             if (FireOs.isHome(stock.pkg)) { refuse(REASON_TV_REFUSES_HOME); return }
+            // What the engine allows inside the open switch (SwitchOffRule), for the same facts.
+            fun mayGoOff(pkg: PackageName) = SwitchOffRule.reason(pkg, state(pkg), profile, snapshot, stockLaunchers, inHomeSwitch = true) == null
             // D3: never the wizard while it may own the saved Wi-Fi network (switching it off deletes
             // that network and takes the TV, and this connection, off Wi-Fi). Without it the switch may
             // not hold on this TV; the HOME_SETUPWRAITH stop then says why.
             val wizard = profile?.setupWraith?.takeIf {
-                Denylist.isWizardAllowed(it, profile) && installed(it) && Denylist.reason(it, snapshot, profile) == null && wizardWifi == WizardWifi.NOT_OWNER
+                Denylist.isWizardAllowed(it, profile) && installed(it) && mayGoOff(it) && wizardWifi == WizardWifi.NOT_OWNER
             }
-            // D25: the stock launcher is disabled unless the profile keeps it enabled (quirk or never_disable).
-            val keepStockEnabled = profile != null && (Quirk.STOCK_LAUNCHER_KEEP_ENABLED in profile.quirks || Denylist.reason(stock.pkg, snapshot, profile) != null)
+            // D25: the stock launcher is disabled unless the profile keeps it enabled (quirk or
+            // never_disable) or the rule keeps it on for this TV's facts (persistent, an input).
+            val keepStockEnabled = (profile != null && Quirk.STOCK_LAUNCHER_KEEP_ENABLED in profile.quirks) || !mayGoOff(stock.pkg)
             val token = idGen.runToken()
 
             // Launcher v2.4.0's precondition: the TV's own home screen is left alone unless the new one

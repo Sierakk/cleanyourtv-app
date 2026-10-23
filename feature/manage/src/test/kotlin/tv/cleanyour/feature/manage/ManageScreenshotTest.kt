@@ -106,7 +106,8 @@ private fun openWrite(kind: PlanKind = PlanKind.SWITCH_OFF, reason: PauseReason 
     OpenWrite(tvId, "Mi TV 4A", PlanId("01JAZ0000000000000000000"), kind, reason, busy, notTaken)
 
 // 0.3.2 B1 and B2: the report preview with the text the report builder makes (TvReportTest has the
-// exact text; this is its shape, shortened).
+// exact text; this is its shape, shortened). 0.3.3 D1: the TV report in its compact form, as the
+// preview shows it and the form gets it.
 private val tvReport = """
     Clean Your TV: TV report
     App: 0.3.2 (full)
@@ -131,10 +132,15 @@ private val tvReport = """
     Resolves to: com.google.android.apps.tv.launcherx/.home.HomeActivity
     Claimant: com.google.android.apps.tv.launcherx/.home.HomeActivity priority 2
 
-    System apps (3)
-    com.google.android.apps.tv.launcherx enabled
-    com.google.android.tungsten.setupwraith enabled
-    com.hisense.storedemo disabled-user, switched off by this app
+    System apps (5)
+    Switched off by this app (1):
+    com.hisense.storedemo
+
+    On, enabled (2):
+    com.google.android.apps.tv.launcherx, com.google.android.tungsten.setupwraith
+
+    On, default (2):
+    android, com.android.tv.settings
 
     Other apps: 14 (not named)
 """.trimIndent()
@@ -160,8 +166,8 @@ private val problemReport = """
     1792745323148 I setup: run paused STEP_FAILED at step 72: undo step failed: Enable com.amazon.tv.launcher: nonzero_exit(1)
 """.trimIndent()
 
-private fun report(kind: ReportKind, text: String = if (kind == ReportKind.TV) tvReport else problemReport) =
-    ReportState(kind, loading = false, text = text, url = "https://github.com/udhaykumarbala/cleanyourtv-app/issues/new", available = true)
+private fun report(kind: ReportKind, text: String = if (kind == ReportKind.TV) tvReport else problemReport, inLink: Boolean = true) =
+    ReportState(kind, loading = false, text = text, url = "https://github.com/udhaykumarbala/cleanyourtv-app/issues/new", available = true, inLink = inLink)
 
 private val tall = 1100.dp
 
@@ -187,6 +193,8 @@ object ManageShots {
         Shot("manage_no_thumbnail") { ManageScreen(manage(card(thumbnail = false, room = null)), {}) },
         // 0.3.2 B1: a TV no profile knows invites the person to help add it.
         Shot("manage_help_add_tv", tall) { ManageScreen(manage(card().copy(helpAddTv = true)), {}) },
+        // 0.3.3 D2 (issue #3): the new home screen isn't on this TV; the Home screen row says so.
+        Shot("manage_own_home", tall) { ManageScreen(manage(card().copy(helpAddTv = true, ownHome = true, dockNames = emptyList())), {}) },
         Shot("manage_two_tvs", tall) {
             val other = card().copy(id = TvId("1111222233334444"), name = "Bedroom Chromecast", room = "Bedroom")
             ManageScreen(manage(others = listOf(other)), {})
@@ -195,6 +203,8 @@ object ManageShots {
         // 0.3.2 B1 and B2: the report preview
         Shot("report_tv", tall) { ReportScreen(report(ReportKind.TV), {}, {}) },
         Shot("report_problem", tall) { ReportScreen(report(ReportKind.PROBLEM), {}, {}) },
+        // 0.3.3 D1: too long for the link, so the screen says it copies the report for the paste.
+        Shot("report_tv_too_long", tall) { ReportScreen(report(ReportKind.TV, inLink = false), {}, {}) },
         Shot("report_loading") { ReportScreen(ReportState(ReportKind.TV), {}, {}) },
         Shot("report_unavailable") { ReportScreen(ReportState(ReportKind.TV, loading = false, available = false), {}, {}) },
 

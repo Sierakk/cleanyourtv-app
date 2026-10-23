@@ -102,6 +102,42 @@ class TvReportTest {
     // What the person shares, line for line.
     @Test fun theTvReportOfTheFixtureTv() = assertEquals(expected, TvReport.text(input()))
 
+    // 0.3.3 D1: the compact report for the form's box: the same header, the packages grouped by
+    // state, sorted, comma separated. A package this app switched off and that is still off is in
+    // the first group.
+    @Test fun theCompactReportOfTheFixtureTv() {
+        val compact = expected.substringBefore("System apps (4)") + """
+            System apps (4)
+            Switched off by this app (1):
+            com.hisense.storedemo
+
+            Off, disabled (1):
+            com.hisense.smartvision
+
+            On, enabled (2):
+            com.google.android.apps.tv.launcherx, com.google.android.tungsten.setupwraith
+
+            Other apps: 2 (not named)
+        """.trimIndent() + "\n"
+        assertEquals(compact, TvReport.compact(input()))
+        // One that came back on after the app switched it off is shown in its state's group.
+        val back = packages + (storeDemo to pkg(EnabledState.ENABLED, true))
+        assertTrue("On, enabled (3):\ncom.google.android.apps.tv.launcherx, com.google.android.tungsten.setupwraith, com.hisense.storedemo\n" in
+            TvReport.compact(input(snapshot(pkgs = back))))
+        assertFalse("Switched off by this app" in TvReport.compact(input(snapshot(pkgs = back))))
+    }
+
+    // Long lists wrap at TvReport.WRAP characters, each line but the last ending in a comma.
+    @Test fun theCompactListsWrap() {
+        val many = (1..40).associate { PackageName("com.example.vendor.part%02d".format(it)) to pkg(EnabledState.DEFAULT, true) }
+        val text = TvReport.compact(input(snapshot(pkgs = many)))
+        val list = text.lines().dropWhile { it != "On, default (40):" }.drop(1).takeWhile { it.isNotBlank() }
+        assertTrue(list.size > 1)
+        assertTrue(list.all { it.length <= TvReport.WRAP }, list.joinToString("\n"))
+        assertTrue(list.dropLast(1).all { it.endsWith(",") } && !list.last().endsWith(","))
+        assertEquals(many.keys.map { it.value }, list.joinToString(" ").split(", ").map { it.trim() })
+    }
+
     @Test fun theSameTvAlwaysGivesTheSameReport() {
         val shuffled = LinkedHashMap(packages.entries.reversed().associate { it.key to it.value })
         assertEquals(TvReport.text(input()), TvReport.text(input(snapshot(pkgs = shuffled))))
@@ -146,8 +182,8 @@ class TvReportTest {
     // an address, in the report or in the link.
     @Test fun noPersonalValueIsInTheReportOrTheLink() {
         val text = TvReport.text(input())
-        val link = URLDecoder.decode(IssueLinks.tvSupport(input()), "UTF-8")
-        for (out in listOf(text, link)) {
+        val link = URLDecoder.decode(IssueLinks.tvSupport(input()).url, "UTF-8")
+        for (out in listOf(text, TvReport.compact(input()), link)) {
             for (secret in listOf(serialLast4, tvId.value, "Arun", "Sky Box", "Label", "en-GB", "shell_v2")) assertFalse(secret in out, "$secret in\n$out")
         }
     }
@@ -156,44 +192,62 @@ class TvReportTest {
     @Test fun valuesFromTheTvAreScrubbed() {
         val f = facts(brand = "Hisense serialno=G070VM1234", model = "55A6H at 192.168.1.20 code 482913", device = "aa:bb:cc:dd:ee:ff 0123456789abcdef")
         val text = TvReport.text(input(snapshot(f)))
-        val link = URLDecoder.decode(IssueLinks.tvSupport(input(snapshot(f))), "UTF-8")
+        val link = URLDecoder.decode(IssueLinks.tvSupport(input(snapshot(f))).url, "UTF-8")
         for (out in listOf(text, link)) {
             for (secret in listOf("G070VM1234", "192.168.1.20", "482913", "aa:bb:cc", "0123456789abcdef")) assertFalse(secret in out, "$secret in\n$out")
         }
         assertTrue("Model: 55A6H at [address] code [code]" in text)
     }
 
-    // The tv_support form's own field ids, prefilled; the report itself stays out of the link.
+    // The tv_support form's own field ids, prefilled; 0.3.3 D1: the compact report too, in the
+    // form's "report" box (the id in tv_support.yml), encoded so newlines and commas survive.
     @Test fun theTvSupportLinkPrefillsTheFormFields() {
-        val url = IssueLinks.tvSupport(input())
+        val link = IssueLinks.tvSupport(input())
+        val url = link.url
         assertTrue(url.startsWith("https://github.com/udhaykumarbala/cleanyourtv-app/issues/new?template=tv_support.yml&"), url)
         val q = query(url)
         assertEquals("Hisense 55A6H", q["model"])
         assertEquals("Android 11, RTM6.230109.155", q["android"])
         assertEquals("Google TV", q["platform"])
         assertEquals("TV support: Hisense 55A6H", q["title"])
-        assertEquals(IssueLinks.PASTE_NOTE, q["report"])
-        assertFalse("storedemo" in url)
-        assertTrue(url.length < IssueLinks.MAX_URL, "${url.length}")
-        assertFalse('+' in url || ' ' in url)
+        assertTrue(link.reportInLink)
+        assertEquals(TvReport.compact(input()).trimEnd(), q[IssueLinks.TV_REPORT_FIELD])
+        assertEquals("report", IssueLinks.TV_REPORT_FIELD)
+        assertTrue(url.length <= IssueLinks.MAX_URL, "${url.length}")
+        assertFalse('+' in url || ' ' in url || '\n' in url)
+        // Without a report, no report field: the form's placeholder asks for the paste.
+        assertFalse("report=" in IssueLinks.tvSupport(input(), null).url)
     }
 
     @Test fun theBugReportLinkPrefillsVersionPhoneAndTv() {
-        val q = query(IssueLinks.bugReport(about, input()))
+        val log = "Clean Your TV 0.3.2, Android 36\n1792745323148 I setup: run paused STEP_FAILED at step 72"
+        val report = TvReport.problem(about, input(), log)
+        val link = IssueLinks.bugReport(about, input(), report)
+        assertTrue(link.reportInLink)
+        assertEquals(report.trimEnd(), query(link.url)[IssueLinks.PROBLEM_REPORT_FIELD])
+        assertEquals("diagnostics", IssueLinks.PROBLEM_REPORT_FIELD)
+        // A log too long for the link: the other fields stay, the report is pasted.
+        val long = IssueLinks.bugReport(about, input(), TvReport.problem(about, input(), (1..300).joinToString("\n") { "1792745323148 I setup: line $it" }))
+        assertFalse(long.reportInLink)
+        assertFalse("diagnostics=" in long.url)
+        assertTrue(long.url.length <= IssueLinks.MAX_URL)
+        val q = query(IssueLinks.bugReport(about, input()).url)
         assertEquals("bug_report.yml", q["template"])
         assertEquals("0.3.2 (full)", q["version"])
         assertEquals("Samsung SM-S921B, Android 16", q["phone"])
         assertEquals("Hisense 55A6H, Android 11, RTM6.230109.155 (Google TV)", q["tv"])
         assertEquals("Problem: Hisense 55A6H", q["title"])
-        assertNull(query(IssueLinks.bugReport(about, null))["tv"])
-        assertEquals("Problem report", query(IssueLinks.bugReport(about, null))["title"])
+        assertNull(query(IssueLinks.bugReport(about, null).url)["tv"])
+        assertEquals("Problem report", query(IssueLinks.bugReport(about, null).url)["title"])
     }
 
     // A long model name cannot grow the link past its cap.
     @Test fun everyLinkStaysShort() {
         val long = facts(model = "X".repeat(5_000))
-        assertTrue(IssueLinks.tvSupport(input(snapshot(long))).length < IssueLinks.MAX_URL)
-        assertTrue(IssueLinks.bugReport(about.copy(phone = "P".repeat(5_000)), input(snapshot(long))).length < IssueLinks.MAX_URL)
+        assertTrue(IssueLinks.tvSupport(input(snapshot(long))).url.length <= IssueLinks.MAX_URL)
+        assertTrue(IssueLinks.bugReport(about.copy(phone = "P".repeat(5_000)), input(snapshot(long)), "x".repeat(20_000)).url.length <= IssueLinks.MAX_URL)
+        // The short fields stay short: the cut is MAX_VALUE each.
+        assertTrue(IssueLinks.tvSupport(input(snapshot(long)), null).url.length < 2_000)
     }
 
     @Test fun theHomeScreenTheTvCameWith() {

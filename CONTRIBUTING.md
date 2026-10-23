@@ -97,13 +97,15 @@ You don't need a computer or adb for either. The app makes the report, shows it 
 sends nothing itself: you copy it to GitHub, share it, or close the screen.
 
 - **Something went wrong.** Tap **Report a problem**, on the card that stopped you or in the app's
-  Settings, then **Copy and open GitHub**. The "Report a problem" form opens with the app version,
-  the phone and the TV filled in; paste the report into its last box and say in a few words what
-  happened. The report is the app's log with addresses, serial numbers, keys and codes removed.
+  Settings, then **Open GitHub**. The "Report a problem" form opens with the app version, the phone,
+  the TV and the report filled in; say in a few words what happened. (A report too long for the link
+  is copied instead, the button says **Copy and open GitHub**, and you paste it into the last box.)
+  The report is the app's log with addresses, serial numbers, keys and codes removed.
 - **Your TV isn't listed.** When the app doesn't know your exact TV it is careful and says so. Tap
-  **Help add this TV** (on the "We found" screen, or the TV's Manage screen), then **Copy and open
-  GitHub**. The "Help add my TV" form opens with the model and Android version filled in; paste the
-  report. It lists the apps the TV came with; apps you installed are only counted.
+  **Help add this TV** (on the "We found" screen, or the TV's Manage screen), then **Open GitHub**.
+  The "Help add my TV" form opens with the model, the Android version and the report filled in (or,
+  for a report too long for the link, **Copy and open GitHub** and paste it). It lists the apps the
+  TV came with; apps you installed are only counted.
 
 We read every report. For a new TV we make a list from the report, ask you to try it, and send it
 upstream once it works (below). How maintainers sort reports is in [docs/TRIAGE.md](docs/TRIAGE.md).

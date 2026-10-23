@@ -301,11 +301,14 @@ class EngineTest {
         h.tv.persistentOverride = setOf(h.debloat[0])   // the dump says PERSISTENT; the snapshot did not
         engine.start(plan, h.tv, plan.hash, h.pass())
         h.settle(engine)
-        val paused = engine.runState(h.tv.tvId).value as RunState.Paused
-        assertEquals(PauseReason.STEP_FAILED, paused.reason)
-        assertEquals(AdbError.Policy.ProtectedPackage(h.debloat[0]), paused.error)
-        assertEquals(0, h.tv.execs("pm disable-user"), "the line was never sent")
-        assertEquals(listOf("plan", "begin0", "failed0", "paused:STEP_FAILED@0"), h.types(plan))
+        // Issue #10: outside the home screen switch the refusal is a skip, never a pause.
+        val fin = engine.runState(h.tv.tvId).value as RunState.Finished
+        assertEquals(RunStatus.COMPLETED_WITH_SKIPS, fin.status)
+        assertEquals(listOf(plan.steps[0]), fin.skipped)
+        assertEquals(h.debloat.size - 1, h.tv.execs("pm disable-user"), "the refused line was never sent")
+        assertTrue(!h.tv.isOff(h.debloat[0]))
+        assertEquals(listOf("plan", "begin0", "failed0", "begin1"), h.types(plan).take(4))
+        assertEquals(DefaultEngine.PROTECTED + tv.cleanyour.core.ops.Denylist.REASON_PERSISTENT, h.records(plan).filterIsInstance<JournalRecord.Failed>().single().error)
     }
 
     @Test fun stopPausesAfterTheCurrentStep() = runTest(timeout = TEST_TIMEOUT) {
@@ -419,7 +422,7 @@ class EngineTest {
     }
 
     // R1 R-13: the executor refuses to switch off the TV's current HOME or any HOME claimant outside
-    // the open guarded section, even when the plan was made before HOME changed.
+    // the open guarded section, even when the plan was made before HOME changed (a skip since 0.3.3).
     @Test fun theLiveCheckRefusesToSwitchOffAHomeScreenOutsideTheSection() = runTest(timeout = TEST_TIMEOUT) {
         for (case in listOf("resolved", "claimant")) {
             val h = Harness(this)
@@ -429,9 +432,10 @@ class EngineTest {
             val plan = h.opsPlan(Op.Disable(target))
             engine.start(plan, h.tv, plan.hash, h.pass())
             h.settle(engine)
-            val paused = engine.runState(h.tv.tvId).value as RunState.Paused
-            assertEquals(PauseReason.STEP_FAILED, paused.reason, case)
-            assertEquals(AdbError.Policy.ProtectedPackage(target), paused.error, case)
+            // Issue #10: refused and skipped, never a pause that Carry on would meet again.
+            val fin = engine.runState(h.tv.tvId).value as RunState.Finished
+            assertEquals(RunStatus.COMPLETED_WITH_SKIPS, fin.status, case)
+            assertEquals(plan.steps, fin.skipped, case)
             assertEquals(0, h.tv.execs("pm disable-user"), "$case: the line was never sent")
             val failed = h.records(plan).filterIsInstance<JournalRecord.Failed>().single()
             assertTrue(failed.error.contains("home screen"), failed.error)

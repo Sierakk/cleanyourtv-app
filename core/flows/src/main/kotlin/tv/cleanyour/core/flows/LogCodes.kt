@@ -93,7 +93,11 @@ object LogCodes {
 // Defence in depth for anything the TV told us: none of the report's or the log's fields carry these
 // by construction, but a TV's model or stderr is free text.
 internal object Scrub {
-    private val IPV4 = Regex("\\b\\d{1,3}(?:\\.\\d{1,3}){3}\\b")
+    // 0.3.3 D3 (issue #10): the same address rule as the app's redactor: four octets of 0 to 255, not
+    // glued to a letter, a digit or a dot (a sentence's last dot still masks), so a Xiaomi build
+    // string such as "V816.0.11.0.UZFAABX" in a fingerprint stays whole.
+    private const val OCTET = "(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)"
+    private val IPV4 = Regex("(?<![A-Za-z0-9.])$OCTET(?:\\.$OCTET){3}(?![A-Za-z0-9]|\\.[A-Za-z0-9])")
     private val IPV6 = Regex("\\b(?:[0-9A-Fa-f]{1,4}:){3,7}[0-9A-Fa-f]{1,4}\\b")
     private val MAC = Regex("\\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\\b")
     private val TV_ID = Regex("\\b[0-9a-f]{16}\\b")

@@ -14,7 +14,11 @@ import tv.cleanyour.core.flows.Diagnostics
 object Redactor {
     private val BLOB = Regex("[A-Za-z0-9+/_=-]{40,}")
     private val FINGERPRINT = Regex("\\b(?:[0-9A-Fa-f]{2}:){15}[0-9A-Fa-f]{2}\\b")
-    private val IPV4 = Regex("\\b(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\b")
+    // 0.3.3 D3 (issue #10): four octets of 0 to 255, not glued to a letter, a digit or a dot, so a
+    // build string such as "V816.0.11.0.UZFAABX" or "UKG3.250107.001" stays whole. A dot that ends
+    // a sentence ("from 192.168.1.20.") still masks: only a dot followed by a letter or digit counts.
+    private const val OCTET = "(25[0-5]|2[0-4]\\d|[01]?\\d?\\d)"
+    private val IPV4 = Regex("(?<![A-Za-z0-9.])$OCTET\\.$OCTET\\.$OCTET\\.$OCTET(?![A-Za-z0-9]|\\.[A-Za-z0-9])")
     private val SERIAL = Regex("(?i)(serial(?:no)?|ro\\.serialno|ro\\.boot\\.serialno)([\"'\\]\\s:=\\[]+)([A-Za-z0-9]{4,})")
     private val TV_ID = Regex("\\b[0-9a-f]{16}\\b")
     private val CODE = Regex("(?<![\\d.])\\d{6}(?![\\d.])")

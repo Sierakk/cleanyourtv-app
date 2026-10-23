@@ -30,6 +30,8 @@ import tv.cleanyour.core.flows.Busy
 import tv.cleanyour.core.flows.ButtonCapture
 import tv.cleanyour.core.flows.HomeScreenIntent
 import tv.cleanyour.core.flows.HomeScreenState
+import tv.cleanyour.core.flows.HomeBlock
+import tv.cleanyour.core.flows.NotOnTv
 import tv.cleanyour.core.model.PackageName
 import tv.cleanyour.core.planner.Plan
 import tv.cleanyour.ui.design.component.ActionColumn
@@ -42,6 +44,7 @@ import tv.cleanyour.ui.design.component.CytTopBar
 import tv.cleanyour.ui.design.component.DockApp
 import tv.cleanyour.ui.design.component.DockEditor
 import tv.cleanyour.ui.design.component.DockEditorState
+import tv.cleanyour.ui.design.component.Lead
 import tv.cleanyour.ui.design.component.ListDivider
 import tv.cleanyour.ui.design.component.ListGroup
 import tv.cleanyour.ui.design.component.ListRow
@@ -54,6 +57,7 @@ import tv.cleanyour.ui.design.component.TertiaryButton
 import tv.cleanyour.ui.design.component.ThemeOption
 import tv.cleanyour.ui.design.component.ThemePicker
 import tv.cleanyour.ui.design.component.themeSwatch
+import tv.cleanyour.ui.design.icon.CytIcons
 import tv.cleanyour.ui.design.theme.Glow
 
 // M2 Home screen: Dock (S3b), Look (theme picker), "Use the TV's own home screen" with its preview,
@@ -61,6 +65,8 @@ import tv.cleanyour.ui.design.theme.Glow
 // composable, so the screenshot tests can draw it on SheetSurface.
 @Composable
 fun HomeScreen(state: HomeScreenState, onIntent: (HomeScreenIntent) -> Unit, onBack: () -> Unit, modifier: Modifier = Modifier) {
+    val notOnTv = state.notOnTv
+    if (notOnTv != null) { NotOnTvScreen(state.tvName, notOnTv, onIntent, onBack, modifier); return }
     var dockOpen by rememberSaveable { mutableStateOf(false) }
     var lookOpen by rememberSaveable { mutableStateOf(false) }
     var buttonsOpen by rememberSaveable { mutableStateOf(false) }
@@ -125,6 +131,51 @@ fun HomeScreen(state: HomeScreenState, onIntent: (HomeScreenIntent) -> Unit, onB
     }
     state.updatePreview?.let { plan ->
         CytBottomSheet({ onIntent(HomeScreenIntent.CancelPreview) }) { UpdatePreviewContent(plan, state.updateTo.orEmpty(), onIntent) }
+    }
+}
+
+// 0.3.3 D2 (issue #3): the new home screen isn't on this TV, so no Dock or Look rows (a tap there
+// was refused and said "We stopped"). Why, from what Setup recorded, and the next step when there
+// is one: Setup again (the reason can change) or Help add this TV (a list is what is missing).
+// Both buttons only navigate; nothing here writes to the TV.
+@Composable
+private fun NotOnTvScreen(tvName: String, n: NotOnTv, onIntent: (HomeScreenIntent) -> Unit, onBack: () -> Unit, modifier: Modifier) {
+    val action = when {
+        n.setupAgain -> R.string.home_run_setup_again to HomeScreenIntent.RunSetupAgain
+        n.helpAddTv -> R.string.home_help_add_tv to HomeScreenIntent.HelpAddTv
+        else -> null
+    }
+    ScreenScaffold(
+        Glow.Tv, modifier,
+        topBar = { CytTopBar(onBack = onBack) },
+        bottomBar = if (action == null) null else ({
+            ActionColumn { PrimaryButton(stringResource(action.first), { onIntent(action.second) }, guardObscured = false) }
+        }),
+    ) {
+        ScreenTitle(stringResource(R.string.home_title), Modifier.padding(top = 20.dp))
+        Lead(msg(R.string.home_not_on_tv_lead, "tv" to tvName), Modifier.padding(top = 12.dp))
+        val why = when (n.reason) {
+            HomeBlock.TV_REFUSES -> msg(R.string.home_not_on_tv_refuses, "brand" to (if (n.fireTv) stringResource(R.string.home_fire_tv_name) else n.brand))
+            HomeBlock.OLD_ANDROID -> stringResource(R.string.home_not_on_tv_old_android)
+            HomeBlock.UNKNOWN_HOME -> stringResource(R.string.home_not_on_tv_unknown_home)
+            HomeBlock.WIZARD_WIFI -> stringResource(if (n.unlisted) R.string.home_not_on_tv_wizard_wifi_unlisted else R.string.home_not_on_tv_wizard_wifi)
+            HomeBlock.WIZARD_WIFI_UNKNOWN -> stringResource(R.string.home_not_on_tv_wizard_wifi_unknown)
+            HomeBlock.CASTING -> stringResource(R.string.home_not_on_tv_casting)
+            HomeBlock.BOOT_LOOP -> stringResource(R.string.home_not_on_tv_boot_loop)
+            HomeBlock.WIZARD_STAYS_ON -> stringResource(R.string.home_not_on_tv_wizard_stays_on)
+            HomeBlock.HOME_CHANGED -> stringResource(R.string.home_not_on_tv_home_changed)
+            HomeBlock.NONE, null -> stringResource(R.string.home_not_on_tv_none)
+        }
+        Banner(why, BannerTone.INFO, Modifier.padding(top = 16.dp), icon = CytIcons.Info)
+        val next = when {
+            n.helpAddTv -> R.string.home_not_on_tv_next_list
+            !n.setupAgain -> null
+            n.reason == HomeBlock.WIZARD_WIFI -> R.string.home_not_on_tv_next_wifi
+            n.reason == HomeBlock.WIZARD_WIFI_UNKNOWN -> R.string.home_not_on_tv_next_check
+            n.reason == HomeBlock.HOME_CHANGED -> R.string.home_not_on_tv_next_home_changed
+            else -> R.string.home_not_on_tv_next_setup
+        }
+        next?.let { Body(stringResource(it), Modifier.padding(top = 16.dp, start = 4.dp, end = 4.dp)) }
     }
 }
 

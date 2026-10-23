@@ -92,4 +92,23 @@ class LogCodesTest {
         assertTrue(out.startsWith("Exception occurred while executing 'disable-user': java.lang.SecurityException: from [address] mac [mac] id [id] serialno=[serial]"), out)
         assertTrue(out.length <= 160)
     }
+
+    // 0.3.3 D3 (issue #10): the report's own scrub keeps build strings whole ("V816.0.11.0.UZFAABX"
+    // became "V816.[address].1.UZFAABX" in 0.3.2) and still masks real addresses.
+    @Test fun buildStringsStayWholeAndAddressesGo() {
+        val fingerprints = listOf(
+            "Xiaomi/jaws/jaws:14/UKG3.250107.001/V816.0.11.0.UZFAABX:user/release-keys",          // issue #10
+            "AURZEN/AURZEN_BOOMAIR/himalaya:11/RTMA.250416.043/13549864:user/release-keys",       // issue #9
+            "Haier/nippori/nippori:11/RTO5.250812.001/13924387:user/release-keys",                // issue #11
+            "Philips/PH0M_LT_T32/PH0M_EA_T32:11/RTM2.210929.098/200321:user/release-keys",       // issue #13
+            "Smarttech/SMARTTECH_4K_ATV3/marina:11/RTMA.250416.028/13485761:user/release-keys",   // issue #15
+        )
+        // The TV report's Build line scrubs without the six digit code rule (a build number is not a code).
+        for (f in fingerprints) assertEquals(f, Scrub.text(f, codes = false))
+        for (s in listOf("V816.0.11.0.UZFAABX", "UKG3.250107.001", "1.2.3.4.5", "256.1.1.1")) assertEquals(s, LogCodes.clean(s))
+        assertEquals("[address]", LogCodes.clean("192.168.0.195"))
+        assertEquals("[address]:5555", LogCodes.clean("10.0.0.5:5555"))
+        assertEquals("addr [address],", LogCodes.clean("addr 172.16.4.2,"))
+        assertEquals("from [address].", LogCodes.clean("from 192.168.1.20."))
+    }
 }

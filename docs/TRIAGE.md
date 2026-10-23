@@ -92,8 +92,8 @@ next.
 **A TV report is missing.**
 
 > Thank you for writing. To make a list for this TV we need to see which apps it came with. The
-> app can do this for you: open the TV in the app, tap **Help add this TV**, then **Copy and open
-> GitHub**, and paste the report into a comment here. It shows you everything before you post it,
+> app can do this for you: open the TV in the app, tap **Help add this TV**, then **Share** and
+> choose Copy, and paste the report into a comment here. It shows you everything before you post it,
 > and it never includes your serial number, addresses or Wi-Fi name.
 
 **Stuck: the setup didn't finish.**

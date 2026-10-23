@@ -39,6 +39,7 @@
     <string name="manage_level_simple_note">Switches off the usual clutter and keeps everything else.</string>
     <string name="manage_level_custom_note">Lets you choose each item, the dock and the look.</string>
     <string name="manage_row_home">Home screen</string>
+    <string name="manage_row_home_own">The TV keeps its own. See why</string>
     <string name="manage_row_cards">Cards and modules</string>
     <string name="manage_row_cards_none">No cards yet</string>
     <string name="manage_row_switched_off">{count, plural, other {Switched off (#)}}</string>
@@ -185,6 +186,10 @@
     <string name="report_preview_label">The report</string>
     <string name="report_paste_hint">We copy the report, then open the form on GitHub. Paste it into the box that asks for it.</string>
     <string name="report_copy_open">Copy and open GitHub</string>
+    <!-- 0.3.3 D1: the report fits in the link, so the form opens with it filled in -->
+    <string name="report_open">Open GitHub</string>
+    <string name="report_in_link_hint">The form on GitHub opens with this report already in it. Add a few words if you like, then post it. We copy the report too, in case the form opens without it.</string>
+    <string name="report_too_long">This report is too long to go into the form by itself, so we copy it for you. On GitHub, long-press the report box, choose Paste, then post it.</string>
     <string name="report_share">Share</string>
     <string name="report_loading">Making the report</string>
     <string name="report_unavailable">We need to read this TV once before we can make its report. Set it up or connect to it, then try again.</string>

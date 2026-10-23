@@ -10,11 +10,12 @@ body:
 
         **The app can fill this in for you.** Tap **Report a problem**: it is on the card that stopped you, on
         "The setup didn't finish", and in the app's Settings (the gear on Manage). Then tap
-        **Copy and open GitHub**: this form opens with the version, the phone and the TV filled in, and the
-        report is on your clipboard. Paste it into the "Report from the app" box below.
+        **Open GitHub**: this form opens with the version, the phone, the TV and the report filled in. A very
+        long report doesn't fit in the link; then the button says **Copy and open GitHub**, and you paste the
+        report into the "Report from the app" box below (long-press in the box and choose Paste).
 
         The report is plain text. Addresses, serial numbers, keys and codes are removed before you see it, and
-        nothing is sent until you post this form. Please never paste your TV's serial number, your network
+        nothing is public until you post this form. Please never paste your TV's serial number, your network
         addresses or a pairing code yourself. Security problems go through SECURITY.md (a private advisory),
         not here.
   - type: input
@@ -60,10 +61,11 @@ body:
     id: diagnostics
     attributes:
       label: Report from the app
-      description: Long-press in the box and choose Paste. The app copied the report when you tapped Copy and open GitHub.
+      description: The app fills this in. If the box is empty, long-press in it and choose Paste; the app copied the report for you.
+      placeholder: Paste the app's report here. No report from the app? Write "none" and say why under What happened.
       render: text
     validations:
-      required: false
+      required: true
   - type: markdown
     attributes:
       value: |

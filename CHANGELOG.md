@@ -2,6 +2,40 @@
 
 All notable changes to the app. Versions follow [semantic versioning](https://semver.org/).
 
+## 0.3.3 (2026-10-24)
+
+Fixes from the first public day of issues. Thank you to everyone who reported.
+
+### Setup
+- A switch-off the TV answers "yes" to but keeps on is now skipped, and the rest of the clean-up
+  runs. Before, Carry on met the same step again every time (issue #10, PatchWall on a Xiaomi TV
+  Box S with Android 14). Done names what wouldn't switch off.
+- The app and the TV now check the same rule before anything is switched off, so the plan can no
+  longer include a step the app itself would then refuse.
+- A launcher you installed yourself is never switched off. If the TV's home screen was already
+  changed, by another app or an earlier change, Setup leaves it as it is and does the clean-up.
+  Before, such a TV got "plan refused" on every try (issue #8).
+- On a TV without an exact list, the TV's own home screen now stays switched on during the new
+  home screen switch when it is a protected kind of app (one the TV keeps running, its keyboard or
+  its screensaver), instead of being switched off.
+- When there was nothing to change, Done now says "Nothing was changed" instead of "Your TV is
+  ready" (issue #15).
+- On a TV the app has no list for, the setup wizard note no longer suggests re-adding the Wi-Fi,
+  which would not help there.
+
+### Manage
+- Home screen on a TV without the new home screen says why Setup left the TV's own, and what
+  would change it, instead of offering a dock and a look that ended in "We stopped" (issue #3).
+
+### Reports
+- Help add this TV and Report a problem now fill the GitHub form in for you: the report is part of
+  the link when it fits (all the real reports so far do), and is still copied as a fallback. The
+  form's report box can no longer be posted empty (issues #12, #14, #16).
+- The TV report lists the apps in short groups, so it fits the form.
+- Build numbers such as "V816.0.11.0" are no longer mistaken for network addresses and masked.
+- Privacy policy: says that when the report is part of the form's link, your browser sends it to
+  GitHub as it opens the form. Nothing is posted until you post it.
+
 ## 0.3.2 (2026-10-23)
 
 Fixes from the first two issues people reported, and an easy way to report a problem or a new TV.

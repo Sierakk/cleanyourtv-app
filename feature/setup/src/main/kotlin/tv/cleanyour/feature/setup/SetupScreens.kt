@@ -42,6 +42,7 @@ import tv.cleanyour.core.flows.ChipState
 import tv.cleanyour.core.flows.Confirmations
 import tv.cleanyour.core.flows.Finishing
 import tv.cleanyour.core.flows.HomeBlock
+import tv.cleanyour.core.flows.NothingWhy
 import tv.cleanyour.core.flows.Reconnect
 import tv.cleanyour.core.flows.RestartState
 import tv.cleanyour.core.flows.SetupActions
@@ -225,7 +226,10 @@ fun FoundScreen(
             val line = when (extras.homeBlock) {
                 HomeBlock.OLD_ANDROID -> stringResource(R.string.found_home_old_android)
                 HomeBlock.UNKNOWN_HOME -> stringResource(R.string.found_home_unknown_stock)
-                HomeBlock.WIZARD_WIFI -> stringResource(R.string.found_home_wizard_wifi)
+                HomeBlock.HOME_CHANGED -> stringResource(R.string.found_home_changed)
+                // A TV no exact profile knows keeps its wizard on whoever saved the Wi-Fi, so the
+                // "forget and re-add the network" advice would not help there.
+                HomeBlock.WIZARD_WIFI -> stringResource(if (extras.unknownModel) R.string.found_home_wizard_wifi_unlisted else R.string.found_home_wizard_wifi)
                 HomeBlock.WIZARD_WIFI_UNKNOWN -> stringResource(R.string.found_home_wizard_wifi_unknown)
                 HomeBlock.CASTING -> stringResource(R.string.found_home_casting)
                 HomeBlock.BOOT_LOOP -> stringResource(R.string.found_home_boot_loop)
@@ -592,8 +596,21 @@ fun DoneScreen(state: SetupState.Done, extras: SetupExtras, actions: SetupAction
     ) {
         val doneCd = stringResource(R.string.done_hero_cd)
         Box(Modifier.padding(top = 16.dp, start = 6.dp).semantics { contentDescription = doneCd }) { GlassCheckMark() }
-        ScreenTitle(stringResource(R.string.done_title), Modifier.padding(top = 22.dp), size = TitleSize.DISPLAY)
-        Lead(if (s.homeScreenOn) msg(R.string.done_body, "count" to s.switchedOff) else msg(R.string.done_body_no_home, "count" to s.switchedOff), Modifier.padding(top = 8.dp))
+        // Issue #15: a run that changed nothing says so, never "Your TV is ready" over "0 things".
+        val nothing = extras.doneNothing
+        ScreenTitle(stringResource(if (nothing) R.string.done_title_nothing else R.string.done_title), Modifier.padding(top = 22.dp), size = TitleSize.DISPLAY)
+        val lead = when {
+            // "We weren't sure about anything" only when nothing was planned on a TV without an exact list.
+            nothing -> stringResource(when {
+                extras.doneNothingWhy == NothingWhy.KEPT_ON -> R.string.done_body_nothing_kept
+                extras.doneNothingWhy == NothingWhy.STOPPED -> R.string.done_body_nothing_stopped
+                extras.unknownModel -> R.string.done_body_nothing_unknown
+                else -> R.string.done_body_nothing
+            })
+            s.homeScreenOn -> msg(R.string.done_body, "count" to s.switchedOff)
+            else -> msg(R.string.done_body_no_home, "count" to s.switchedOff)
+        }
+        Lead(lead, Modifier.padding(top = 8.dp))
         Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             CheckLine(msg(R.string.done_restore_saved, "date" to dateTime(s.restorePointAtMs, locale)))
             CheckLine(
@@ -606,7 +623,8 @@ fun DoneScreen(state: SetupState.Done, extras: SetupExtras, actions: SetupAction
             s.skipped.size == 1 -> Body(msg(R.string.done_skipped, "name" to s.skipped.single()), Modifier.padding(start = 4.dp, top = 12.dp))
             s.skipped.size > 1 -> Body(msg(R.string.done_skipped_many, "count" to s.skipped.size), Modifier.padding(start = 4.dp, top = 12.dp))
         }
-        RestartCard(state, extras, actions)
+        // Nothing changed, so there is nothing a restart could check.
+        if (!nothing) RestartCard(state, extras, actions)
         extras.card?.takeIf { it.case == StopCase.NOT_BACK_AFTER_RESTART }?.let { c ->
             // The card is the news: scroll it into view when it appears instead of leaving it
             // under the pinned Finish (R4-W8).

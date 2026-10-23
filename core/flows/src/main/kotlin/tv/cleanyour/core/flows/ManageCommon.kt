@@ -50,6 +50,7 @@ sealed interface ManageEffect {
 
 enum class SnackKind { PUT_BACK, SWITCHED_OFF, HOME_SAVED, MODULE_REMOVED, EXPORT_SAVED, EXPORT_FAILED, FAILED, HOME_UPDATED,
     KEPT_TV_INPUT,    // RF-LAUNCHER-250 F1: a switch-off the live check kept because it runs the TV's inputs
+    KEPT_ON,          // issue #10: a switch-off the TV kept on (or the live check refused); nothing changed
     RUN_BUSY,         // Forget this TV refused: setup is still working on this TV
     RUN_BUSY_ANY }    // Delete everything refused: setup is still working on the TV named
 

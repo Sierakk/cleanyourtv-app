@@ -11,7 +11,10 @@ import tv.cleanyour.core.engine.RunState
 import tv.cleanyour.core.engine.RunStatus
 import tv.cleanyour.core.engine.SectionState
 import tv.cleanyour.core.model.AdbError
+import tv.cleanyour.core.model.EnabledState
 import tv.cleanyour.core.model.Op
+import tv.cleanyour.core.model.PackageName
+import tv.cleanyour.core.model.PackageState
 import tv.cleanyour.core.model.RunToken
 import tv.cleanyour.core.spec.ProfileResolution
 import tv.cleanyour.testing.fixtures.Samples
@@ -160,7 +163,8 @@ class ReportFlowsTest {
         }
     }
 
-    // B1: the preview's text is the TV report; Copy and open GitHub copies first, then opens the form.
+    // B1: the preview's text is the TV report; the button copies first, then opens the form. 0.3.3 D1:
+    // the preview and the form get the compact report, in the link; Share keeps the full one.
     @Test fun theTvReportCopiesThenOpensTheFormOrShares() = runTest(timeout = 30.seconds) {
         val h = Harness()
         val tv = h.knownTv().copy(profileId = null).also { h.tvs.upsert(it) }
@@ -175,13 +179,39 @@ class ReportFlowsTest {
         assertTrue("Home switch: blocked WIZARD_STAYS_ON" in s.text)
         assertTrue(s.url.contains("template=tv_support.yml"))
         assertFalse(tv.id.value in s.text || tv.facts.serialLast4 in s.text || "192.0.2" in s.text || tv.nickname in s.text)
+        assertTrue(s.inLink)
+        assertTrue(s.url.contains("&report="), s.url)
+        assertTrue(s.url.length <= IssueLinks.MAX_URL)
+        assertTrue("On, enabled (" in s.text, s.text)
+        assertTrue(s.shareText.startsWith("Clean Your TV: TV report\n") && "On, enabled (" !in s.shareText && " enabled\n" in s.shareText, s.shareText)
         m.effects.test {
             m.dispatch(ReportIntent.CopyAndOpen); settle()
             assertEquals(listOf(ManageEffect.Copy(s.text), ManageEffect.OpenUrl(s.url)), drain())
         }
         m.effects.test {
             m.dispatch(ReportIntent.Share); settle()
-            assertEquals(listOf<ManageEffect>(ManageEffect.Share(s.text)), drain())
+            assertEquals(listOf<ManageEffect>(ManageEffect.Share(s.shareText)), drain())
+        }
+    }
+
+    // 0.3.3 D1: a TV report too long for the link: no report in it, the preview says so (inLink false),
+    // and the button still copies before it opens the form.
+    @Test fun aTvReportTooLongForTheLinkIsCopiedForThePaste() = runTest(timeout = 30.seconds) {
+        val h = Harness()
+        val tv = h.knownTv().copy(profileId = null).also { h.tvs.upsert(it) }
+        val many = (1..400).associate {
+            PackageName("com.example.vendor.firmware.part$it") to PackageState(EnabledState.DEFAULT, true, 0, null, false, false, null, false)
+        }
+        h.snapshots.save(Samples.snapshot(packages = Samples.miTvPackages() + many, takenAtMs = Samples.NOW_MS + 1))
+        val m = ReportMachine(h.manageDeps(), backgroundScope, ReportKind.TV, tv.id)
+        settle()
+        val s = m.state.value
+        assertFalse(s.inLink)
+        assertFalse("report=" in s.url, s.url)
+        assertTrue(s.url.length <= IssueLinks.MAX_URL)
+        m.effects.test {
+            m.dispatch(ReportIntent.CopyAndOpen); settle()
+            assertEquals(listOf(ManageEffect.Copy(s.text), ManageEffect.OpenUrl(s.url)), drain())
         }
     }
 
@@ -208,6 +238,8 @@ class ReportFlowsTest {
         assertTrue(s.text.startsWith("Clean Your TV: problem report\n"), s.text)
         assertTrue("Apps: " in s.text && s.text.endsWith("redacted\n"), s.text)
         assertTrue(s.url.contains("template=bug_report.yml") && s.url.contains("&tv="), s.url)
+        // 0.3.3 D1: a short problem report rides in the link too.
+        assertTrue(s.inLink && s.url.contains("&diagnostics="), s.url)
         val settings = AppSettingsMachine(h.manageDeps(), backgroundScope)
         settings.effects.test {
             settings.dispatch(AppSettingsIntent.ReportProblem); settle()

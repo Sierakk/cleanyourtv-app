@@ -131,7 +131,9 @@ fun ManageScreen(state: ManageState, onIntent: (ManageIntent) -> Unit, modifier:
                     actionLabel = stringResource(R.string.manage_help_add_tv), onAction = { onIntent(ManageIntent.HelpAddTv) })
             }
             ListGroup(Modifier.padding(top = 16.dp)) {
-                ListRow(stringResource(R.string.manage_row_home), subtitle = tv.dockNames.joinToString(", ").ifEmpty { null },
+                // 0.3.3 D2: without the new home screen there is no dock to name; the row opens the reason.
+                ListRow(stringResource(R.string.manage_row_home),
+                    subtitle = if (tv.ownHome) stringResource(R.string.manage_row_home_own) else tv.dockNames.joinToString(", ").ifEmpty { null },
                     onClick = { onIntent(ManageIntent.Open(ManageSection.HOME_SCREEN)) })
                 ListDivider()
                 // STORES-PLAN 1: the Play build has no add-ons, so no row that leads to them.

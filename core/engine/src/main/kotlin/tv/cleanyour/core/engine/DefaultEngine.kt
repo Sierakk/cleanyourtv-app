@@ -39,13 +39,12 @@ import tv.cleanyour.core.ops.Rendered
 import tv.cleanyour.core.ops.Transfer
 import tv.cleanyour.core.ops.VerifyResult
 import tv.cleanyour.core.model.Component
-import tv.cleanyour.core.planner.DefaultPlanner
-import tv.cleanyour.core.planner.FireOs
 import tv.cleanyour.core.planner.GuardedSection
 import tv.cleanyour.core.planner.Plan
 import tv.cleanyour.core.planner.PlanKind
 import tv.cleanyour.core.planner.PlanSummary
 import tv.cleanyour.core.planner.Step
+import tv.cleanyour.core.planner.SwitchOffRule
 import tv.cleanyour.core.probe.Prober
 import tv.cleanyour.core.session.BootOutcome
 import tv.cleanyour.core.session.ExecResult
@@ -93,6 +92,7 @@ class DefaultEngine(
         var restorePoint = NarrationState.DOING
         var snapshot: Snapshot? = null
         var profile: Profile? = null
+        var stockLaunchers: List<Component> = emptyList()   // the resolution's, as the planner had them (SwitchOffRule)
         @Volatile var stopRequested = false
         val decisions = Channel<Boolean>(Channel.CONFLATED)
         var job: Job? = null
@@ -226,10 +226,23 @@ class DefaultEngine(
         }
         if (save) snapshots.save(snap)
         run.snapshot = snap
-        run.profile = (profiles?.resolve(snap.facts) as? ProfileResolution.Exact)?.profile
+        resolve(run, snap)
         val diff = Staleness.diff(run.plan.steps.drop(from), snap)
         if (diff.isNotEmpty()) { pause(run, PauseReason.STALE, AdbError.Policy.Stale(diff)); return false }
         return true
+    }
+
+    // The profile and the stock launchers of this TV's resolution, so the live check asks the same
+    // rule the planner asked (SwitchOffRule) with the same lists.
+    private suspend fun resolve(run: Run, snap: Snapshot) {
+        val r = profiles?.resolve(snap.facts)
+        run.profile = (r as? ProfileResolution.Exact)?.profile
+        run.stockLaunchers = when (r) {
+            is ProfileResolution.Exact -> r.profile.stockLaunchers
+            is ProfileResolution.BrandSureSet -> r.stockLaunchers
+            is ProfileResolution.None -> r.stockLaunchers
+            null -> emptyList()
+        }
     }
 
     private suspend fun loop(run: Run) {
@@ -271,6 +284,14 @@ class DefaultEngine(
                             run.states[i] = NarrationState.FAILED
                             if (!rollbackSection(run, section, HomeOutcome.VERIFY_FAILED)) return
                             finishWithSkips(run, HomeOutcome.VERIFY_FAILED, i + 1); return
+                        }
+                        // Issue #10: a switch-off outside the home screen switch that the live check
+                        // refused, or that the TV answered but kept on (its check read does not list it
+                        // and its package dump still shows it on, see disableChecked), changed nothing: it is a skip, whatever its policy, so the run
+                        // goes on and Carry on never meets the same refusal again. Done names it
+                        // ("wouldn't switch off; it's harmless").
+                        step.op is Op.Disable && outcome is Outcome.Failed && keptOn(outcome.error) -> {
+                            run.skipped += step; run.states[i] = NarrationState.SKIPPED; run.at = i + 1
                         }
                         step.onFailure == FailurePolicy.CONTINUE || (step.onFailure == FailurePolicy.SKIP_IF_REFUSED && outcome is Outcome.Refused) -> {
                             run.skipped += step; run.states[i] = NarrationState.SKIPPED; run.at = i + 1
@@ -483,8 +504,7 @@ class DefaultEngine(
                 return if (e.error.isLost()) Outcome.Lost(e.error) else Outcome.Failed(e.error, "dumpsys package failed")
             }
             val live = liveState(target, dump, run.snapshot)
-            val reason = Denylist.reason(target, live, run.profile, run.snapshot) ?: tvInputHardwareReason(step, dump)
-                ?: fireOsHomeReason(step, target) ?: homeScreenReason(run, step, target)
+            val reason = if (step.op is Op.Disable) switchOffReason(run, step, target, live, dump) else Denylist.reason(target, live, run.profile, run.snapshot)
             if (reason != null) {
                 journal.append(JournalRecord.Begin(run.plan.id, step.index, step.op, step.rendered.lines.map { it.text }, step.prior, clock.nowMs()))
                 journal.append(JournalRecord.Failed(run.plan.id, step.index, null, "$PROTECTED$reason", ""))
@@ -502,34 +522,25 @@ class DefaultEngine(
         return perform(run, step.index, step.op, step.rendered, step.prior)
     }
 
-    // The home screen rule at run time (R1 R-13): the TV's current HOME and every HOME claimant, as
-    // the run's live snapshot shows them, are switched off only inside the open guarded section (the
-    // stock launcher and the wizard of the takeover). A plan made before HOME changed cannot reach
-    // them: the staleness check covers SetHome priors, not a HOME change behind a debloat plan.
-    private fun homeScreenReason(run: Run, step: Step, target: PackageName): String? {
-        if (step.op !is Op.Disable) return null
-        val home = run.snapshot?.home ?: return null
-        val isHome = home.resolved?.pkg == target || home.claimants.any { it.component.pkg == target }
-        if (!isHome) return null
+    // The switch-off rule at run time, the one the planner applied (SwitchOffRule, issue #10), with the
+    // live facts: the package's dump read just above and the run's PRE_PLAN snapshot. The TV's
+    // current HOME and every HOME claimant, the stock launchers and the setup wizard are switched off
+    // only inside the open guarded section (R1 R-13: a plan made before HOME changed cannot reach
+    // them; the staleness check covers SetHome priors, not a HOME change behind a debloat plan).
+    // Fire OS's own home screens (issue #2) and a home screen app the person installed (issue #8)
+    // never go off, inside a section too, whatever an older plan file says. Upstream #421 (launcher
+    // v2.5.0's tools/disable.sh): a package that asks for TV_INPUT_HARDWARE is the layer under the
+    // HDMI, AV and tuner inputs, so it stays on, inside the takeover too (RF-LAUNCHER-250 F2).
+    private fun switchOffReason(run: Run, step: Step, target: PackageName, live: PackageState?, dump: String): String? {
         val inSection = run.plan.sections.any { it.name in run.openSections && step.index in it.from..it.to }
-        return if (inSection) null else DefaultPlanner.REASON_HOME_SCREEN
+        return SwitchOffRule.reason(target, live, run.profile, run.snapshot, run.stockLaunchers, inHomeSwitch = inSection,
+            requestsTvInputHardware = PackageDump.requestsTvInputHardware(dump))
     }
 
-    // Issue #2: Fire OS's own home screens are protected by the firmware (pm disable-user and pm
-    // enable are both refused), so a switch-off of one is refused here, inside a section too, whatever
-    // an older plan file says; it never reaches the TV.
-    private fun fireOsHomeReason(step: Step, target: PackageName): String? =
-        if (step.op is Op.Disable && FireOs.isHome(target)) DefaultPlanner.REASON_FIRE_OS_HOME else null
-
-    // Upstream #421 (launcher v2.5.0's tools/disable.sh): a package that asks for TV_INPUT_HARDWARE is
-    // the layer under the HDMI, AV and tuner inputs, registered as an input or not. Switched off, a port
-    // still notices the cable but stays black until a full restore and a cold boot, so it is never
-    // switched off, whatever the profile says. The dump is the one read just above, so this costs no
-    // extra call. Only a switch-off is refused: putting a package back always goes through. It holds
-    // inside the takeover too (RF-LAUNCHER-250 F2), as upstream's disable.sh applies it to the old
-    // launcher: a stock launcher or wizard that asks for it stays enabled and the section goes on.
-    private fun tvInputHardwareReason(step: Step, dump: String): String? =
-        if (step.op is Op.Disable && PackageDump.requestsTvInputHardware(dump)) Denylist.REASON_TV_INPUT else null
+    // A refusal that leaves the package as it was: the live check's (nothing was sent), or a package
+    // dump that still shows it on after the TV answered (some firmware, like the Xiaomi box of issue
+    // #10, says yes and keeps it on). A check read that errors is never one (disableChecked).
+    private fun keptOn(error: AdbError): Boolean = error is AdbError.Policy.ProtectedPackage || error is AdbError.Policy.GuardFailed
 
     // Begin (forced) before the line is sent, Done or Failed before the next Begin.
     private suspend fun perform(run: Run, index: Int, op: Op, rendered: Rendered, prior: Prior?): Outcome {
@@ -584,10 +595,35 @@ class DefaultEngine(
             }
             null -> {}
         }
+        val check = rendered.verify
+        if (op is Op.Disable && check != null) return disableChecked(session, op, renderer.render(check), prior)
         val verifyOutput = rendered.verify?.let { read(session, renderer.render(it)) } ?: ownOutput
         return when (val v = renderer.check(op, verifyOutput, prior)) {
             VerifyResult.Ok -> installedApkCheck(session, op)
             is VerifyResult.Mismatch -> Outcome.Failed(AdbError.Policy.GuardFailed(-1, "expected ${v.expected}, got ${v.actual}"), "verify: expected ${v.expected}, got ${v.actual}")
+        }
+    }
+
+    // A switch-off's check read (pm list packages -d). A check read that errors is a failure, never
+    // a kept-on package: the step pauses as before. When the check read answers but does not list the
+    // package (an empty answer, or one that raced the write), the package's own dump is read once,
+    // the read the live check uses: switched off (DISABLED_USER or DISABLED) is done and recorded as
+    // a change, and only a dump that positively shows it enabled or default is the TV keeping it on
+    // (issue #10's GuardFailed, a skip outside the home screen switch). A dump that cannot be read,
+    // or shows no enabled state, is a failure too.
+    private suspend fun disableChecked(session: TvSession, op: Op.Disable, check: Rendered, prior: Prior?): Outcome {
+        val r = readResult(session, check) ?: return Outcome.Failed(AdbError.Transport.Protocol("no check read"), "verify: no check read")
+        if (r.exit != 0) return Outcome.Failed(AdbError.NonZeroExit(r.exit, r.stderr.take(4096)), "verify read: exit ${r.exit}")
+        val v = renderer.check(op, r.stdout, prior) as? VerifyResult.Mismatch ?: return Outcome.Ok
+        val d = readResult(session, renderer.render(Op.Read(ProbeKind.PACKAGE_DUMP, ReadArg.Pkg(op.pkg))))
+            ?: return Outcome.Failed(AdbError.Transport.Protocol("no package dump read"), "verify: no package dump read")
+        if (d.exit != 0) return Outcome.Failed(AdbError.NonZeroExit(d.exit, d.stderr.take(4096)), "verify: dumpsys package exit ${d.exit}")
+        val state = if (PackageDump.exists(op.pkg, d.stdout)) PackageDump.enabledState(d.stdout) else null
+        return when (state) {
+            EnabledState.DISABLED_USER, EnabledState.DISABLED -> Outcome.Ok
+            EnabledState.ENABLED, EnabledState.DEFAULT ->
+                Outcome.Failed(AdbError.Policy.GuardFailed(-1, "expected ${v.expected}, got ${v.actual}"), "verify: expected ${v.expected}, got ${v.actual}")
+            null -> Outcome.Failed(AdbError.Transport.Protocol("dumpsys package shows no enabled state"), "verify: dumpsys package shows no enabled state for ${op.pkg.value}")
         }
     }
 
@@ -864,7 +900,7 @@ class DefaultEngine(
             for (i in run.done) run.states[i] = NarrationState.DONE
             run.restorePoint = NarrationState.DONE
             run.snapshot = snapshots.load(tvId, plan.baseSnapshot) ?: snapshots.latest(tvId)
-            run.profile = run.snapshot?.let { s -> (profiles?.resolve(s.facts) as? ProfileResolution.Exact)?.profile }
+            run.snapshot?.let { s -> resolve(run, s) }
             runs[tvId] = run
             scope.launch { safety(run, Replay.inDoubt(records)) }
         }

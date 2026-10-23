@@ -8,6 +8,7 @@ import tv.cleanyour.core.model.Component
 import tv.cleanyour.core.model.EnabledState
 import tv.cleanyour.core.model.PackageName
 import tv.cleanyour.core.model.TvId
+import tv.cleanyour.core.planner.FireOs
 import tv.cleanyour.core.planner.Plan
 import tv.cleanyour.core.planner.PlanRequest
 import tv.cleanyour.core.probe.PressedKey
@@ -17,6 +18,26 @@ import tv.cleanyour.core.spec.DockLayers
 // with its preview, the drift banner (D15: the overlay digest re-read on every connect; "Restore
 // mine" pushes ours again) and "Update the home screen" with its preview (D4, RFC-LAUNCHER-1).
 data class AppChoice(val pkg: PackageName, val name: String)
+
+// 0.3.3 D2 (issue #3): the new home screen is not on this TV (Setup did not install it, or it was
+// removed since), so there is no dock or look to send: the planner refuses ApplyTheme then, and
+// 0.3.2 showed that refusal as "We stopped". Instead the screen says why, from the wizard's stored
+// decision (HomeDecisions), and what can change it.
+// `reason`: the home switch block Setup recorded; null when none was recorded (a TV set up before
+// 0.3.2) or the switch was planned and the launcher is gone since.
+// `fireTv`: for TV_REFUSES, name Fire TV instead of the brand (issue #2).
+// `unlisted`: no exact profile knows this TV, so even with the Wi-Fi saved another way its setup
+// wizard has to stay on (HomeSwitchRisk) and WIZARD_WIFI needs a list first.
+// `setupAgain`: running Setup again can add it (nothing blocks it, or the block can change).
+// `helpAddTv`: a list for this TV is what is missing; "Help add this TV" makes its report.
+data class NotOnTv(
+    val reason: HomeBlock?,
+    val brand: String,
+    val fireTv: Boolean = false,
+    val unlisted: Boolean = false,
+    val setupAgain: Boolean = false,
+    val helpAddTv: Boolean = false,
+)
 
 data class HomeScreenState(
     val tvName: String = "",
@@ -36,6 +57,7 @@ data class HomeScreenState(
     val buttons: List<RemoteButton> = emptyList(),      // Remote buttons mapped for this TV, in the order they were mapped
     val buttonsSupported: Boolean = false,              // the new home screen is the TV's and reads "scan:" app_keys (2.6, versionCode 7, and later)
     val capture: ButtonCapture? = null,                 // the press being waited for or just read; null with no Remote buttons sheet step open
+    val notOnTv: NotOnTv? = null,                       // 0.3.3 D2: the new home screen is not on this TV; no dock or look rows
 )
 
 sealed interface HomeScreenIntent {
@@ -51,6 +73,8 @@ sealed interface HomeScreenIntent {
     data object CancelCapture : HomeScreenIntent
     data class MapButton(val scancode: Int, val pkg: PackageName) : HomeScreenIntent    // the pressed button opens this app
     data class UnmapButton(val scancode: Int) : HomeScreenIntent
+    data object RunSetupAgain : HomeScreenIntent       // 0.3.3 D2, NotOnTv.setupAgain
+    data object HelpAddTv : HomeScreenIntent           // 0.3.3 D2, NotOnTv.helpAddTv
 }
 
 class HomeScreenMachine(
@@ -86,6 +110,9 @@ class HomeScreenMachine(
 
     override fun handle(event: Any, before: HomeScreenState, after: HomeScreenState) {
         if (before.busy != null && event is HomeScreenIntent) return
+        // 0.3.3 D2: nothing to send the dock or the look to.
+        if (after.notOnTv != null && (event is HomeScreenIntent.SetDock || event is HomeScreenIntent.SetTheme || event == HomeScreenIntent.RestoreMine ||
+                event is HomeScreenIntent.MapButton || event is HomeScreenIntent.UnmapButton)) return
         when (event) {
             is HomeScreenIntent.SetDock -> scope.launch { apply(event.dock, after.themeId, savedKeys()) }
             // RF-LAUNCHER-250 F4: a new look and "Restore mine" push the dock as it was saved, as
@@ -106,6 +133,8 @@ class HomeScreenMachine(
             is HomeScreenIntent.UnmapButton -> scope.launch {
                 apply(savedDock() ?: after.dock.map { it.pkg }, after.themeId, RemoteButtons.unmapped(savedKeys(), event.scancode))
             }
+            HomeScreenIntent.RunSetupAgain -> if (after.notOnTv?.setupAgain == true) effect(ManageEffect.Navigate("setup/${tvId.value}"))
+            HomeScreenIntent.HelpAddTv -> if (after.notOnTv?.helpAddTv == true) effect(ManageEffect.Navigate("report/tv/${tvId.value}"))
             else -> {}
         }
     }
@@ -131,7 +160,34 @@ class HomeScreenMachine(
         send(Loaded(HomeScreenState(tv.nickname, dock, apps, choice?.themeId, state.value.themes, stock = profile?.stockLaunchers?.firstOrNull(),
             homeScreenOurs = tv.launcher != null, columns = columns, updateTo = updateTo(tv, packages),
             tvSideSettings = launcherVersion >= FIRST_WITH_TV_SETTINGS,
-            buttons = buttons, buttonsSupported = tv.launcher != null && launcherVersion >= RemoteButtons.FIRST_WITH_SCANCODES)))
+            buttons = buttons, buttonsSupported = tv.launcher != null && launcherVersion >= RemoteButtons.FIRST_WITH_SCANCODES,
+            notOnTv = notOnTv(tv, snap))))
+    }
+
+    // 0.3.3 D2: null while the new home screen is on the TV: Setup recorded it (tv.launcher), or the
+    // newest snapshot lists it (installed, perhaps not the home screen now: "Use the TV's own home
+    // screen" keeps it, and a look still applies). Without a snapshot this phone cannot tell, so the
+    // rows stay and the planner's refusal is the backstop.
+    private suspend fun notOnTv(tv: tv.cleanyour.core.model.Tv, snap: tv.cleanyour.core.model.Snapshot?): NotOnTv? {
+        if (tv.launcher != null || snap == null || Launcher.pkg in snap.packages) return null
+        val reason = attempt { d.homeDecisions.load(tvId) }.getOrNull()?.block?.let { b -> HomeBlock.entries.firstOrNull { it.name == b } }
+        val unlisted = tv.profileId == null
+        val setupAgain = when (reason) {
+            null, HomeBlock.NONE, HomeBlock.WIZARD_WIFI_UNKNOWN -> true
+            // Issue #8: the person can make the TV's own home screen Home again, and on a TV an exact
+            // profile knows Setup then offers the switch. Without that list it may still not.
+            HomeBlock.HOME_CHANGED -> !unlisted
+            // Forgetting and adding the network again makes the TV's own Wi-Fi settings the owner; on a
+            // TV no exact profile knows the wizard still has to stay on (HomeSwitchRisk), so not there.
+            HomeBlock.WIZARD_WIFI -> !unlisted
+            else -> false
+        }
+        val needsList = reason == HomeBlock.UNKNOWN_HOME || reason == HomeBlock.WIZARD_STAYS_ON || (reason == HomeBlock.WIZARD_WIFI && unlisted)
+        return NotOnTv(
+            reason = reason, brand = LogCodes.clean(snap.facts.brand, 40).ifEmpty { tv.nickname },
+            fireTv = reason == HomeBlock.TV_REFUSES && FireOs.isFireOs(snap.facts, snap), unlisted = unlisted,
+            setupAgain = setupAgain, helpAddTv = needsList && unlisted,
+        )
     }
 
     // D4: the bundled launcher is newer than ours on the TV (same signer, lower versionCode). The
@@ -232,10 +288,16 @@ class HomeScreenMachine(
             rememberPushedLook(d, tvId, look.digest)
             send(Drift(false))
             effect(ManageEffect.Snackbar(SnackKind.HOME_SAVED, "", false))
-        } else if (r !is WriteResult.GateCancelled && r !is WriteResult.NoTv && r !is WriteResult.Paused) {   // Paused: the open-run card (O2)
-            effect(ManageEffect.Snackbar(SnackKind.FAILED, "", false))
+            load()
+            return
         }
         load()
+        // 0.3.3 D2: the TV said the new home screen is gone (removed since the snapshot this screen
+        // read): the reload shows why there is nothing to send, which says more than "We stopped".
+        if (r is WriteResult.Refused && state.value.notOnTv != null) return
+        if (r !is WriteResult.GateCancelled && r !is WriteResult.NoTv && r !is WriteResult.Paused) {   // Paused: the open-run card (O2)
+            effect(ManageEffect.Snackbar(SnackKind.FAILED, "", false))
+        }
     }
 
     // "Use the TV's own home screen": re-enables the stock launcher, sets it as home, keeps ours

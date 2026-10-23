@@ -15,7 +15,8 @@ import tv.cleanyour.core.store.DocumentStore
 // 0.3.2: the plain text reports a person can post on GitHub or send
 // themselves, built from what this phone already stored (the probe snapshot), so no TV connection is
 // needed. The app itself sends nothing: the preview screen copies or shares the text, and opens the
-// issue form in the browser only when the person taps it.
+// issue form in the browser only when the person taps it (with the report in the link when it fits,
+// 0.3.3 D1; nothing is public until the person posts the form).
 //
 // What a report may hold: the app version and build, the phone model and Android version, the TV's
 // brand, maker, model, device codename, SDK, Android release and build fingerprint, how the profile
@@ -98,19 +99,35 @@ data class TvReportInput(
 object TvReport {
     private val DAY = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC)
 
-    // B1 "Help add this TV": the whole TV report, system packages included.
+    // B1 "Help add this TV": the whole TV report, system packages included, one per line. Share sends it.
     fun text(input: TvReportInput): String = buildString {
         appendLine("Clean Your TV: TV report")
         appendHeader(input.about)
-        appendTv(input, packages = true)
+        appendTv(input, Packages.LINES)
     }.trimEnd() + "\n"
+
+    // 0.3.3 D1: the same report in fewer characters, for the GitHub form's report box, which it
+    // reaches inside the link (IssueLinks). The header and the HOME lines as in text(), then the
+    // system packages grouped by state, each group a sorted, comma separated list wrapped at WRAP
+    // characters. The same facts as text(): a package the app switched off and that is still off is
+    // in the first group; one that came back on is in its state's group. Real reports of 110 to 130
+    // system packages come to about 5,000 characters encoded, under the link's cap.
+    fun compact(input: TvReportInput): String = buildString {
+        appendLine("Clean Your TV: TV report")
+        appendHeader(input.about)
+        appendTv(input, Packages.GROUPED)
+    }.trimEnd() + "\n"
+
+    const val WRAP = 100
+
+    private enum class Packages { NONE, LINES, GROUPED }
 
     // B2 "Report a problem": the TV summary (no package list) when a TV was read, then the redacted
     // diagnostics log (already redacted by the app's logger).
     fun problem(about: AppAbout, input: TvReportInput?, log: String): String = buildString {
         appendLine("Clean Your TV: problem report")
         appendHeader(about)
-        if (input != null) appendTv(input, packages = false) else { appendLine(); appendLine("TV: none read yet") }
+        if (input != null) appendTv(input, Packages.NONE) else { appendLine(); appendLine("TV: none read yet") }
         appendLine()
         appendLine("Diagnostics log (addresses, serial numbers, keys and codes removed)")
         append(log.trimEnd())
@@ -121,7 +138,7 @@ object TvReport {
         appendLine("Phone: ${v(about.phoneLine)}")
     }
 
-    private fun StringBuilder.appendTv(input: TvReportInput, packages: Boolean) {
+    private fun StringBuilder.appendTv(input: TvReportInput, packages: Packages) {
         val s = input.snapshot
         val f = s.facts
         appendLine()
@@ -154,17 +171,62 @@ object TvReport {
         val system = s.packages.filter { it.value.system }.toSortedMap(compareBy { it.value })
         val others = s.packages.size - system.size
         appendLine()
-        if (packages) {
-            appendLine("System apps (${system.size})")
-            for ((pkg, st) in system) {
-                val ours = if (pkg in input.switchedOffByApp) ", switched off by this app" else ""
-                appendLine("${pkg.value} ${state(st.enabled)}$ours")
+        when (packages) {
+            Packages.LINES -> {
+                appendLine("System apps (${system.size})")
+                for ((pkg, st) in system) {
+                    val ours = if (pkg in input.switchedOffByApp) ", switched off by this app" else ""
+                    appendLine("${pkg.value} ${state(st.enabled)}$ours")
+                }
+                appendLine()
+                appendLine("Other apps: $others (not named)")
             }
-            appendLine()
-            appendLine("Other apps: $others (not named)")
-        } else {
-            appendLine("Apps: ${system.size} system, $others other")
+            Packages.GROUPED -> {
+                appendLine("System apps (${system.size})")
+                val off = { e: EnabledState -> e == EnabledState.DISABLED_USER || e == EnabledState.DISABLED }
+                val groups = linkedMapOf<String, MutableList<String>>(
+                    "Switched off by this app" to mutableListOf(),
+                    "Off, disabled-user" to mutableListOf(),
+                    "Off, disabled" to mutableListOf(),
+                    "On, enabled" to mutableListOf(),
+                    "On, default" to mutableListOf(),
+                )
+                for ((pkg, st) in system) {
+                    val group = when {
+                        pkg in input.switchedOffByApp && off(st.enabled) -> "Switched off by this app"
+                        st.enabled == EnabledState.DISABLED_USER -> "Off, disabled-user"
+                        st.enabled == EnabledState.DISABLED -> "Off, disabled"
+                        st.enabled == EnabledState.ENABLED -> "On, enabled"
+                        else -> "On, default"
+                    }
+                    groups.getValue(group).add(pkg.value)
+                }
+                for ((label, names) in groups) {
+                    if (names.isEmpty()) continue
+                    appendLine("$label (${names.size}):")
+                    for (line in wrap(names, WRAP)) appendLine(line)
+                    appendLine()
+                }
+                if (system.isEmpty()) appendLine()
+                appendLine("Other apps: $others (not named)")
+            }
+            Packages.NONE -> appendLine("Apps: ${system.size} system, $others other")
         }
+    }
+
+    // "a, b, c" in lines of at most `width` characters (a longer name gets a line of its own); every
+    // line but the last ends with the comma that follows its last name.
+    private fun wrap(names: List<String>, width: Int): List<String> {
+        val lines = mutableListOf<String>()
+        val line = StringBuilder()
+        for ((i, n) in names.withIndex()) {
+            val piece = if (i < names.lastIndex) "$n," else n
+            if (line.isNotEmpty() && line.length + 1 + piece.length > width) { lines.add(line.toString()); line.clear() }
+            if (line.isNotEmpty()) line.append(' ')
+            line.append(piece)
+        }
+        if (line.isNotEmpty()) lines.add(line.toString())
+        return lines
     }
 
     // A HOME activity is named only when it belongs to a system package the probe read as one, or to
@@ -221,35 +283,48 @@ object TvReport {
 }
 
 // The new-issue links the preview screen opens (B1, B2). GitHub issue forms take a field's id as a
-// query parameter and prefill that text field. Each value is short and the whole link stays far
-// under GitHub's limit; the report itself goes on the clipboard, never into the link.
+// query parameter and prefill that field. 0.3.3 D1 (issues #8, #12, #13, #14, #16: the paste step was
+// missed or went into the wrong box): the report itself goes into the form's report box through the
+// link when the whole link stays at or under MAX_URL characters; otherwise the box stays empty (the
+// form's placeholder asks for a paste, and the box is required) and the app copies the report, as
+// the preview screen says before it opens GitHub. The short fields are cut to MAX_VALUE each; the
+// report is all or nothing, never cut.
 object IssueLinks {
     const val REPO = "https://github.com/udhaykumarbala/cleanyourtv-app"
     const val MAX_VALUE = 200
-    const val MAX_URL = 2000   // the tests hold every link under it
+    // GitHub answers links of about 8 KB and more with an error page; 7,000 keeps a margin for the
+    // browser and for a redirect through the sign-in page, which carries the link as a parameter.
+    const val MAX_URL = 7000
 
-    // The line the form's report box starts with, so the person knows to paste.
-    const val PASTE_NOTE = "The app copied the report. Long-press here, choose Paste, and the report goes in below this line."
+    // The form fields that hold the report (the ids in .github/ISSUE_TEMPLATE).
+    const val TV_REPORT_FIELD = "report"
+    const val PROBLEM_REPORT_FIELD = "diagnostics"
 
-    fun tvSupport(input: TvReportInput): String = link("tv_support.yml", listOf(
+    // `reportInLink`: the report rides in the link, so the form opens with it in the report box.
+    data class Link(val url: String, val reportInLink: Boolean)
+
+    // B1 with the compact TV report (TvReport.compact).
+    fun tvSupport(input: TvReportInput, report: String? = TvReport.compact(input)): Link = link("tv_support.yml", listOf(
         "title" to "TV support: ${TvReport.tvName(input.snapshot)}",
         "model" to TvReport.tvName(input.snapshot),
         "android" to TvReport.androidLine(input.snapshot),
         "platform" to TvReport.platformOf(input.snapshot),
-        "report" to PASTE_NOTE,
-    ))
+    ), TV_REPORT_FIELD, report)
 
-    fun bugReport(about: AppAbout, input: TvReportInput?): String = link("bug_report.yml", listOfNotNull(
+    // B2 with the problem report (TvReport.problem).
+    fun bugReport(about: AppAbout, input: TvReportInput?, report: String? = null): Link = link("bug_report.yml", listOfNotNull(
         "title" to (input?.let { "Problem: ${TvReport.tvName(it.snapshot)}" } ?: "Problem report"),
         "version" to about.appLine,
         "phone" to about.phoneLine,
         input?.let { "tv" to "${TvReport.tvName(it.snapshot)}, ${TvReport.androidLine(it.snapshot)} (${TvReport.platformOf(it.snapshot)})" },
-        "diagnostics" to PASTE_NOTE,
-    ))
+    ), PROBLEM_REPORT_FIELD, report)
 
-    private fun link(template: String, params: List<Pair<String, String>>): String {
+    private fun link(template: String, params: List<Pair<String, String>>, reportField: String, report: String?): Link {
         val query = (listOf("template" to template) + params).joinToString("&") { (k, v) -> "$k=${enc(v.take(MAX_VALUE))}" }
-        return "$REPO/issues/new?$query"
+        val base = "$REPO/issues/new?$query"
+        if (report.isNullOrBlank()) return Link(base, false)
+        val full = "$base&$reportField=${enc(report.trimEnd())}"
+        return if (full.length <= MAX_URL) Link(full, true) else Link(base, false)
     }
 
     private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
