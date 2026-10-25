@@ -1,0 +1,1 @@
+0.3.4 fixes "plan refused" on TVs whose home screen was already changed by another tool: Setup now leaves it as it is and does the clean-up. When Setup can't make a safe plan, it says so instead of "We couldn't read what's on the TV", and Report a problem includes the reason.

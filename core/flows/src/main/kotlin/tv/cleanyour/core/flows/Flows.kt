@@ -48,7 +48,8 @@ enum class Sheet { LIST, CUSTOMISE, DOCK, THEME, ADDRESS }
 enum class StopCase { HOME_SETUPWRAITH, HOME_OTHER_LAUNCHER, HOME_UNKNOWN, HOME_USER_SAID_NO, CONNECTION_LOST, RESUME_AFTER_DEATH, INSTALL_FAILED, TV_REFUSES_HOME, PAIRING_NEEDED, IDENTITY_CHANGED,
     // W8 additions (growable, R0: 2; DECISIONS-W8.md D-W8-3): the stops of section 4 that had no case
     TV_NOT_FOUND, WRONG_NETWORK, TV_NOT_SUPPORTED, HOME_TIMED_OUT, STEP_FAILED, UNDONE, PROBE_FAILED, NOT_BACK_AFTER_RESTART,
-    HOME_PUT_BACK }   // M5: step R put the old home screen back after a lost connection
+    HOME_PUT_BACK,   // M5: step R put the old home screen back after a lost connection
+    PLAN_REFUSED }   // 0.3.4 (issues #171, #187, #220): the TV answered, the planner found no safe plan
 data class StopCard(val case: StopCase, val title: String, val body: String, val primary: String, val secondary: String?, val planId: PlanId?,
     val tertiary: String? = null)   // W8 addition: S4d and S4e have three buttons
 data class DoneSummary(val switchedOff: Int, val homeScreenOn: Boolean, val restorePointAtMs: Long, val skipped: List<String>, val restartRecommended: Boolean)

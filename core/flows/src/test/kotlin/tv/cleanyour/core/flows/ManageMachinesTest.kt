@@ -45,6 +45,7 @@ import tv.cleanyour.testing.fixtures.FakeApkInspector
 import tv.cleanyour.testing.fixtures.FakeArtifactFetcher
 import tv.cleanyour.testing.fixtures.FakeCredentialGate
 import tv.cleanyour.testing.fixtures.FakeEngine
+import tv.cleanyour.testing.fixtures.Issue034
 import tv.cleanyour.testing.fixtures.Samples
 import tv.cleanyour.testing.fixtures.sha256Of
 import kotlin.test.Test
@@ -839,6 +840,23 @@ class ManageMachinesTest {
         val manage = ManageMachine(h.manageDeps(), backgroundScope, tv.id)
         settle()
         assertTrue(assertNotNull(manage.state.value.current).ownHome)
+    }
+
+    // Issues #171, #187, #220: Setup left a launcher under our package name with another key as it is
+    // (HOME_CHANGED). Manage's Home screen says why, as for issue #8, and offers no dock or look for
+    // it. The same package with any other decision (ours, a planned switch) keeps the rows.
+    @Test fun issue171And187And220ALauncherUnderOurNameThatSetupLeftIsNotOffered() = runTest(timeout = 30.seconds) {
+        val h = Harness()
+        val tv = h.knownTv().copy(launcher = null).also { h.tvs.upsert(it) }
+        val theirs = Issue034.launcherState(Issue034.otherSigner)
+        h.snapshots.save(Samples.snapshot(packages = Samples.miTvPackages() + (Issue034.gathinHome.pkg to theirs), takenAtMs = Samples.NOW_MS + 30))
+        HomeDecisions(h.documents).save(tv.id, HomeDecision(false, "HOME_CHANGED"))
+        val n = assertNotNull(HomeScreenMachine(h.manageDeps(), backgroundScope, tv.id).also { settle() }.state.value.notOnTv)
+        assertEquals(HomeBlock.HOME_CHANGED, n.reason)
+        HomeDecisions(h.documents).save(tv.id, HomeDecision(true))
+        assertNull(HomeScreenMachine(h.manageDeps(), backgroundScope, tv.id).also { settle() }.state.value.notOnTv)
+        HomeDecisions(h.documents).save(tv.id, HomeDecision(false, alreadyOn = true))
+        assertNull(HomeScreenMachine(h.manageDeps(), backgroundScope, tv.id).also { settle() }.state.value.notOnTv)
     }
 
     // 0.3.3 D2: the reason and the next step for each stored decision. WIZARD_WIFI can change by

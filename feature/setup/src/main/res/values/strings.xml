@@ -42,6 +42,8 @@
     <string name="stop_probe_failed_primary">Try again</string>
     <string name="stop_probe_failed_secondary">Back</string>
     <string name="stop_probe_failed_tertiary">Show details</string>
+    <string name="stop_plan_refused_title">We couldn\'t make a safe plan for this TV</string>
+    <string name="stop_plan_refused_body">The TV answered, but what we found on it doesn\'t fit a plan we\'re sure is safe, so we stopped before doing anything. Nothing was changed. Report a problem sends us the reason, so we can fix it.</string>
 
     <!-- S3 What we found -->
     <string name="found_title">{count, plural, =0 {Nothing to switch off. Want the new home screen?} one {We found one thing to switch off} other {We found # things to switch off}}</string>
@@ -72,6 +74,7 @@
     <string name="found_customise">Customise</string>
     <!-- D36 (RF-LAUNCHER-240 F1): the plan replaces a home screen app signed with another key -->
     <string name="found_replaces_launcher">Replaces the home screen app already on this TV. Its look, app order, settings and card answers start fresh.</string>
+    <string name="found_tcl_remote_keys">On TCL Google TV, the remote\'s Settings (gear), Netflix and YouTube buttons stop working with the new home screen. To get them back, choose Use the TV\'s own home screen in Manage.</string>
     <string name="found_no_lock">No screen lock on this phone, so we can\'t double-check it\'s you.</string>
     <!-- Unknown model (no profile) -->
     <string name="found_unknown_title">{count, plural, =0 {We didn\'t find anything we\'re sure about} one {We found one thing we\'re sure about} other {We found # things we\'re sure about}}</string>
@@ -320,4 +323,18 @@
     <string name="confirm_undo_title">Undo the changes on the TV?</string>
     <string name="confirm_undo_body">We put back everything this change did, so the TV is as it was before. Nothing is deleted.</string>
     <string name="confirm_undo_button">Undo the changes</string>
+    <!-- Test build: the card before the plan when this TV's list is a candidate (made from reports, not tested yet). -->
+    <string name="candidate_overline">Test build</string>
+    <string name="candidate_title">This TV\'s list is new</string>
+    <string name="candidate_body">We made a list for this TV from reports of the same model, but nobody has tested it yet. What it switches off is listed in the plan as usual, and you can put everything back from Restore point.</string>
+    <string name="candidate_ask_issue">If you try it, please tell us in issue {issue} how it went after a few days:</string>
+    <string name="candidate_ask">If you try it, please tell us in your issue how it went after a few days:</string>
+    <string name="candidate_check_wifi">Wi-Fi after a restart</string>
+    <string name="candidate_check_remote">Every button on the remote, Input and voice too</string>
+    <string name="candidate_check_hdmi">Each HDMI input</string>
+    <string name="candidate_check_live_tv">Live TV</string>
+    <string name="candidate_check_casting">Casting from a phone</string>
+    <string name="candidate_try">Try the test list</string>
+    <string name="candidate_careful">Stay careful, as in 0.3.4</string>
+    <string name="candidate_careful_note">Careful means only what we\'re sure about for TVs of this brand, the same as version 0.3.4.</string>
 </resources>

@@ -7,6 +7,8 @@ interface SetupActions {
     fun intent(intent: SetupIntent)
     fun back(): Boolean
     fun dismissCard()
+    // Test build: the answer on the candidate list card (true: try the test list).
+    fun chooseCandidate(tryIt: Boolean) {}
 }
 
 object NoSetupActions : SetupActions {

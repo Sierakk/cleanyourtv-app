@@ -46,6 +46,9 @@ R0; the one frozen change is RFC-W4-1 (`docs/rfcs/W4.md`), accepted and applied 
 
 ## Profiles (`:core:spec`, D26, D28)
 
+D26 (0.3.5 amendment): brands with fewer than three profiles now get a careful set (D-W4-15)
+instead of no set; their home screen decision stays that of an unknown TV.
+
 - D-W4-8 `debloat.txt` grammar: a group is a run of package lines; its title is the first line of
   the comment block directly above (decoration stripped); an indented comment under a package
   continues its note; commented-out packages are the owner's keeps and are not in the profile.
@@ -78,6 +81,10 @@ R0; the one frozen change is RFC-W4-1 (`docs/rfcs/W4.md`), accepted and applied 
 - D-W4-15 Sure set (D26): packages in a default-disable group in at least three profiles of the
   brand and in no profile's never-disable list; each placed in the group most of those profiles
   use. Brands that qualify at the pin: TCL and Xiaomi.
+  0.3.5 (D26 amendment, owner decision): a brand with one or two profiles gets a careful set by a
+  stricter rule (off in every one of its lists in an ads, tracking or preloads group, off in at
+  least ten lists of any brand and asked in none, no protected role, and one of six reviewed
+  Google and Android services), with the generic stock launchers only; `SureSetGenerator` documents it.
 - D-W4-16 Dock ranking (D27): fixed regional tables (IN, US, GB, CA, AU, then a global list).
   When the TV has inputs and its Live TV app is installed, Live TV keeps the fourth slot; that
   gives section 4's "Netflix, YouTube, Prime Video, Live TV" on the reference TV, where the

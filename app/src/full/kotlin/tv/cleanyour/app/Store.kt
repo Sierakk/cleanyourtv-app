@@ -22,8 +22,25 @@ object Store : StorePorts {
         if (r.code != 200) { r.body?.close(); null } else {
             val body = r.body?.use { it.readBytes().decodeToString() } ?: return@UpdateChecker null
             val tag = Regex("\"tag_name\"\\s*:\\s*\"v?([0-9][0-9A-Za-z.]*)\"").find(body)?.groupValues?.get(1) ?: return@UpdateChecker null
-            if (tag != current) tag else ""
+            if (offered(tag, current)) tag else ""
         }
+    }
+
+    // Whether the latest release `tag` is worth offering to `current`: any other version, as before,
+    // except on a test build ("0.3.5-test1", a GitHub pre-release that /releases/latest never
+    // returns), which is offered only a higher version or its own release, never the one before it.
+    internal fun offered(tag: String, current: String): Boolean {
+        if (tag == current) return false
+        if ('-' !in current) return true
+        fun numbers(v: String) = v.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
+        val a = numbers(tag)
+        val b = numbers(current)
+        for (i in 0 until maxOf(a.size, b.size)) {
+            val x = a.getOrElse(i) { 0 }
+            val y = b.getOrElse(i) { 0 }
+            if (x != y) return x > y
+        }
+        return '-' !in tag
     }
 
     override fun addOnFetcher(make: () -> ArtifactFetcher): ArtifactFetcher = make()

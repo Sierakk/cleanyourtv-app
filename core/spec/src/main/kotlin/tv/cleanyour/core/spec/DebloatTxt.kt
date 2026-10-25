@@ -182,7 +182,7 @@ internal object DebloatTxt {
             meta?.neverDisable?.forEach { add(PackageName(it)) }
             addAll(guess.keep)
         }
-        val tested = meta?.tested?.let { TestedInfo(it.by, it.firmware, it.daysLivedWith, it.rebootTested) }
+        val tested = meta?.tested?.let { TestedInfo(it.by, it.firmware, it.daysLivedWith, it.rebootTested, it.candidate) }
         return Profile(
             id = folder,
             match = match,

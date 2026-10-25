@@ -1037,10 +1037,11 @@ class SetupMachineTest {
                 assertTrue(m.state.value !is SetupState.Stopped, m.state.value.toString())
                 assertTrue(h.planner.requests.filterIsInstance<PlanRequest.Setup>().none { it.choices.takeover || wizard in it.choices.extraOff })
             } else {
+                // Issue #375: with the Wi-Fi saved by others the switch already had the wizard off (the
+                // quirk), so "Try with the wizard off" is never offered; the plain card instead.
                 val s = assertIs<SetupState.Stopped>(m.state.value)
-                assertEquals(StopCase.HOME_SETUPWRAITH, s.card.case)
-                assertTrue(s.card.body.startsWith("STOP_HOME_SETUPWRAITH_BODY"), s.card.body)
-                assertTrue(s.card.primary.startsWith("STOP_HOME_SETUPWRAITH_PRIMARY"))
+                assertEquals(StopCase.HOME_UNKNOWN, s.card.case)
+                assertTrue(s.card.primary.startsWith("STOP_HOME_UNKNOWN_PRIMARY"), s.card.primary)
             }
             // Only the verdict is logged.
             assertTrue(h.logLines.any { it == "setup: setup wizard and saved Wi-Fi: ${c.verdict}" }, h.logLines.toString())
@@ -1293,6 +1294,102 @@ class SetupMachineTest {
         val m2 = SetupMachine(h2.setupDeps(savedWifi = { tv.cleanyour.core.probe.SavedWifi(listed = true, networks = 1, owners = setOf("android.uid.system:1000")) }), backgroundScope)
         toFound(h2, m2)
         assertEquals(HomeBlock.NONE, m2.extras.value.homeBlock)
+    }
+
+    // Issues #171 (Xiaomi MiTV4I, brand sure set), #187 (Xiaomi Mi Box S, exact profile) and #220
+    // (Polytron Google TV, no profile): Home already answers to com.gathin.tvhome, the new home
+    // screen's package name, signed with another key, and the TV's own home screen is switched off.
+    // 0.3.3 took that for ours and asked for the install and the switch, which the planner refuses
+    // (D36), so every probe ended in "plan refused" and the card said the TV had stopped answering.
+    // Now the home screen was already changed: S3 says so and the real planner makes the clean-up alone.
+    private suspend fun kotlinx.coroutines.test.TestScope.issue034Found(snap: (SnapshotReason) -> tv.cleanyour.core.model.Snapshot): Pair<Harness, SetupMachine> {
+        val h = Harness()
+        h.sessions.allowPromptFor[HOST] = "AB:CD:7F:2A"
+        h.prober.facts = snap(SnapshotReason.BASELINE).facts
+        h.prober.snapshotFor = { r -> snap(r) }
+        val source = tv.cleanyour.core.spec.BundledProfileSource()
+        h.profiles.resolver = { f, _ -> source.resolveNow(f) }
+        val planner = tv.cleanyour.core.planner.DefaultPlanner(h.clock, tv.cleanyour.testing.fixtures.FakeIdGen(), tv.cleanyour.core.ops.ShellRenderer(),
+            tv.cleanyour.testing.fixtures.FakeConfigTransport(), "0.3.4")
+        h.planner.respond = { request, s -> planner.plan(request, s, h.facts, emptyList()) }
+        val m = h.setup(backgroundScope)
+        toFound(h, m)
+        return h to m
+    }
+
+    @Test fun issue171And187And220AHomeScreenUnderOurNameWithAnotherKeyGetsTheCleanUpAlone() = runTest(timeout = 60.seconds) {
+        val reports = listOf<Pair<String, (SnapshotReason) -> tv.cleanyour.core.model.Snapshot>>(
+            "#171" to { r -> tv.cleanyour.testing.fixtures.Issue034.magnoliaSnapshot(reason = r) },
+            "#187" to { r -> tv.cleanyour.testing.fixtures.Issue034.onedaySnapshot(reason = r) },
+            "#220" to { r -> tv.cleanyour.testing.fixtures.Issue034.songshanSnapshot(reason = r) },
+        )
+        for ((issue, snap) in reports) {
+            val (h, m) = issue034Found(snap)
+            val log = "$issue\n" + h.logLines.joinToString("\n")
+            val found = assertIs<SetupState.Found>(m.state.value, log)
+            assertEquals(HomeBlock.HOME_CHANGED, m.extras.value.homeBlock, log)
+            assertFalse(m.extras.value.homePossible, log)
+            val setup = h.planner.requests.filterIsInstance<PlanRequest.Setup>().last()
+            assertFalse(setup.choices.takeover, log)
+            assertFalse(setup.choices.installLauncher, log)
+            assertTrue(found.plan.sections.isEmpty(), log)
+            val pkg = tv.cleanyour.testing.fixtures.Issue034.gathinHome.pkg
+            assertTrue(found.plan.steps.none { it.op == Op.Disable(pkg) || it.op == Op.Uninstall(pkg) || it.op is Op.Install || it.op is Op.InstallStream && (it.op as Op.InstallStream).pkg == pkg }, log)
+            assertTrue(h.logLines.none { it.startsWith("setup: plan refused") }, log)
+            assertTrue(h.logLines.any { it == "setup: home switch blocked HOME_CHANGED" }, log)
+        }
+    }
+
+    // The same TVs with our own key on the launcher in charge: the switch is already done, nothing
+    // is blocked, and the plan is made (no "plan refused").
+    @Test fun issue171And187And220OurOwnLauncherAlreadyInChargeIsAlreadyDone() = runTest(timeout = 60.seconds) {
+        val ours = Samples.launcherArtifact().signer
+        val reports = listOf<Pair<String, (SnapshotReason) -> tv.cleanyour.core.model.Snapshot>>(
+            "#171" to { r -> tv.cleanyour.testing.fixtures.Issue034.magnoliaSnapshot(ours, r) },
+            "#187" to { r -> tv.cleanyour.testing.fixtures.Issue034.onedaySnapshot(ours, r) },
+            "#220" to { r -> tv.cleanyour.testing.fixtures.Issue034.songshanSnapshot(ours, r) },
+        )
+        for ((issue, snap) in reports) {
+            val (h, m) = issue034Found(snap)
+            val log = "$issue\n" + h.logLines.joinToString("\n")
+            val found = assertIs<SetupState.Found>(m.state.value, log)
+            assertEquals(HomeBlock.NONE, m.extras.value.homeBlock, log)
+            assertTrue(found.plan.sections.isEmpty(), log)
+            assertTrue(found.plan.steps.none { it.op is Op.Uninstall && (it.op as Op.Uninstall).pkg == tv.cleanyour.testing.fixtures.Issue034.gathinHome.pkg }, log)
+            assertTrue(h.logLines.none { it.startsWith("setup: plan refused") }, log)
+            assertTrue(h.logLines.any { it == "setup: home switch not needed (the new home screen is on)" }, log)
+        }
+    }
+
+    // A plan the planner refuses has its own card (the TV answered; nothing was changed), not the
+    // probe failure's "the TV stopped answering", and the log says why. An app the person installed
+    // is not named in the reason; the TV's own apps and our package are.
+    @Test fun issue171ARefusedPlanSaysWhyAndHasItsOwnCard() = runTest(timeout = 30.seconds) {
+        val h = Harness()
+        h.sessions.allowPromptFor[HOST] = "AB:CD:7F:2A"
+        h.prober.facts = tv.cleanyour.testing.fixtures.Issue033.g07Facts()
+        h.prober.snapshotFor = { r -> tv.cleanyour.testing.fixtures.Issue033.g07Snapshot(r) }
+        h.planner.respond = { _, _ -> PlanResult.Refused(listOf(
+            "Projectivy Launcher cannot be switched off: it is a home screen app you installed",
+            "com.spocky.projengmenu is not on this TV",
+            "the home screen app can only be replaced while the TV's own home screen is in charge (D36)",
+            "the launcher artifact is com.gathin.tvhome, not com.google.android.apps.tv.launcherx",
+        )) }
+        val m = h.setup(backgroundScope)
+        toFound(h, m)
+        val stopped = assertIs<SetupState.Stopped>(m.state.value, h.logLines.joinToString("\n"))
+        assertEquals(StopCase.PLAN_REFUSED, stopped.card.case)
+        val because = h.logLines.filter { it.startsWith("setup: refused because ") }
+        assertEquals(listOf(
+            "setup: refused because an app you installed cannot be switched off: it is a home screen app you installed",
+            "setup: refused because an app you installed is not on this TV",
+            "setup: refused because the home screen app can only be replaced while the TV's own home screen is in charge (D36)",
+            "setup: refused because the launcher artifact is com.gathin.tvhome, not com.google.android.apps.tv.launcherx",
+        ), because, h.logLines.joinToString("\n"))
+        assertTrue(h.logLines.none { "Projectivy" in it || "projengmenu" in it })
+        // Try again reads the TV again; the same facts give the same card.
+        m.dispatch(SetupIntent.StopAction(StopAction.PRIMARY)); settle(); settle(700)
+        assertEquals(StopCase.PLAN_REFUSED, assertIs<SetupState.Stopped>(m.state.value).card.case)
     }
 
     // Issue #15 (a Smarttech set no profile knows, the switch blocked): nothing to switch off and no

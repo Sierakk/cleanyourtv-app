@@ -61,6 +61,8 @@ internal class Link(
     val signer: AdbSigner,
     val tls: TlsUpgrader?,
     val onAwaitingAllow: suspend (String) -> Unit,
+    // 0.3.6: a failed socket connect, for the diagnostics log (ConnectFailure).
+    val onConnectFailure: (Throwable) -> Unit = {},
 )
 
 // TvSession over :adb:wire (PRODUCT-SPEC 5.3, ARCHITECTURE 3): one call at a time, two clocks
@@ -196,6 +198,7 @@ class AdbTvSession internal constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            link.onConnectFailure(e)
             throw AdbException(classifyConnectFailure(e))
         }
         val conn = AdbConnection.open(

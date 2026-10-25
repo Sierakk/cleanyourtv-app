@@ -2,6 +2,90 @@
 
 All notable changes to the app. Versions follow [semantic versioning](https://semver.org/).
 
+## 0.3.6 (2026-10-25)
+
+Fixes for TVs that got stuck after a home screen switch rolled back, and for the install that
+kept saying the TV stopped answering. Thank you to everyone who sent a report and a log: each of
+these fixes starts from one.
+
+### Setup
+- A TV whose home screen switch rolled back no longer gets stuck. Setup used to offer "Try with
+  the wizard off" after the rollback, which saved a choice every later plan refused, and Back
+  led to Welcome instead of the TV's restore options. That card is gone, saved choices the TV
+  would refuse are dropped before planning, and Back on a refused plan opens Manage for a TV this
+  app already changed (issues #375, #385).
+- No more endless "TV stopped answering" during an install. When the TV ends a streamed install
+  with a protocol error while still connected, the app checks whether the app landed: done if it
+  did, else that step fails and Setup carries on with the clean-up, without the home screen
+  switch (issues #80, #364, #367).
+- On TCL Google TV sets, the plan screen and Manage > Home screen say before the switch that the
+  remote's Settings (gear), Netflix and YouTube buttons don't work with the new home screen, and
+  that Use the TV's own home screen brings them back (issue #275).
+- A safety rule: the home screen switch is never planned while the TV shows a setup wizard that
+  can answer the Home button and the switch would leave it on, also on TVs with an exact list
+  (the Sony BRAVIA BF1 list among them). The clean-up alone still runs. Lists whose switch
+  switches the wizard off, such as the TCL G10 Google TV list, are unchanged.
+- When the TV's port answers but the connection fails, the door now says so, lists what on the
+  phone can block the app (a per-app network limit on MIUI or Samsung, a VPN, Private DNS,
+  mobile data), and offers Copy error: a short summary with the app and Android version, the
+  error and the last log lines, with no addresses in it, ready to paste into an issue.
+
+### Reports and logs
+- The problem report lists what this app switched off and has not put back.
+- The diagnostics log names why a socket connect failed (the exception class and the system's
+  reason), what the TV showed when the home check rolled back, the step the home screen switch
+  stopped at, and the in doubt state by name.
+
+## 0.3.5 (2026-10-24)
+
+More TVs get a careful clean-up, and a safety guard for the ACER R4G. Thank you to everyone who
+sent a TV report: these changes come straight from them.
+
+### Setup
+- More TVs get a careful clean-up. TVs from brands with one or two tested lists (Skyworth, SHARP,
+  onn, OnePlus, Haier and others) now switch off up to six hidden feedback and advertising
+  services: Google Feedback and its consent prompt, the print service, and Android's on-device
+  advertising, ad personalization and ad model services. Each of them is switched off by every
+  tested list of that brand and by at least ten lists in all. Before, these TVs got no clean-up
+  unless a list matched the exact model (for example issues #89, #108, #169, #194, #196, #251).
+  The home screen decision on these TVs is the same as before, and the app still checks each
+  switch-off on the TV before it runs it. TVs that already had a brand set get nothing new.
+- A safety guard for the ACER R4G. It is made by MOKA, in the same family as the TVs whose setup
+  wizard comes back at every restart, so Setup never offers the home screen switch on it, even
+  when its setup wizard is off, and does the clean-up alone (issues #74, #102).
+
+### Reports
+- A TV report from one of these TVs now says `Profile: brand set <Brand>` instead of `none`.
+
+### Under the hood
+- Test builds can carry candidate lists for TVs nobody has tested yet, offered on Setup only to
+  people who agree to try one. Releases carry none: this one resolves every TV as it would
+  without them.
+
+## 0.3.4 (2026-10-24)
+
+Fixes for the TVs whose home screen was already changed, and an honest message when Setup can't
+make a safe plan. Thank you to everyone who sent a report.
+
+### Setup
+- A TV whose home screen is already the new home screen installed another way (for example by
+  the CleanYourTV tool for computers, which signs it with another key) now gets the clean-up, and
+  Setup leaves that home screen as it is. Before, Setup stopped with "plan refused" on every try
+  (issues #171, #187, #220). When the home screen this app installed is already in charge, Setup
+  knows the switch is already done.
+- When Setup can't make a safe plan for a TV, it now says so: the TV answered and nothing was
+  changed, and Report a problem sends us the reason. Before, it showed "We couldn't read what's on
+  the TV", which said the TV had stopped answering when it hadn't (issues #82, #99, #45).
+
+### Manage
+- On a TV whose home screen was installed another way (see Setup above), Home screen says Setup
+  left it as it was, as for other home screens that were already changed, instead of offering a
+  dock and a look for it (issues #171, #187, #220).
+
+### Reports
+- The diagnostics log now names the reasons a plan was refused. Apps you installed yourself are
+  not named in them.
+
 ## 0.3.3 (2026-10-24)
 
 Fixes from the first public day of issues. Thank you to everyone who reported.

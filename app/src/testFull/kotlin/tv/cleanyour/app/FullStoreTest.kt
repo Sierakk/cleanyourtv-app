@@ -66,6 +66,15 @@ class FullStoreTest {
         assertEquals("https://github.com/udhaykumarbala/cleanyourtv-app/releases", Store.releasePage)
     }
 
+    // Test build: 0.3.5-test1 is offered 0.3.5 and later, never the 0.3.4 it installs over.
+    @Test fun aTestBuildIsOfferedOnlyANewerRelease() = runBlocking {
+        fun latest(tag: String, current: String) = runBlocking { Store.updateChecker(OneAnswer(200, "{\"tag_name\":\"v$tag\"}")).latestNewerThan(current) }
+        assertEquals("", latest("0.3.4", "0.3.5-test1"))
+        assertEquals("0.3.5", latest("0.3.5", "0.3.5-test1"))
+        assertEquals("0.4.0", latest("0.4.0", "0.3.5-test1"))
+        assertEquals("0.3.4", latest("0.3.4", "0.3.3"))
+    }
+
     @Test fun softwareUpdatesStayTheOwnersChoice() {
         val g = graph()
         val ota = PackageName("com.mitv.ota")

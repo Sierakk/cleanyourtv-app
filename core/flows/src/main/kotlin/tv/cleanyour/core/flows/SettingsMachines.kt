@@ -220,6 +220,7 @@ class AppSettingsMachine(
         }
         attempt { d.documents.deleteTree("registry") }
         attempt { d.documents.delete("settings.txt") }
+        attempt { d.documents.delete(CandidateChoices.PATH) }   // test build: the answers on the candidate list card
         attempt { d.keyInfo.reset() }
         attempt { d.diagnostics.clear() }   // the app's own diagnostics log goes too
         d.gate.clear()

@@ -96,6 +96,8 @@ object LauncherShots {
         Shot("home_dock_rows") { HomeScreen(home(dock = rowsDock), {}, {}) },
         Shot("home_update_available") { HomeScreen(home(updateTo = "2.4"), {}, {}) },
         Shot("home_buttons_row") { HomeScreen(home(buttons = mapped), {}, {}) },
+        // Issue #275: TCL Google TV, the remote buttons the new home screen loses and the way back.
+        Shot("home_tcl_remote_keys") { HomeScreen(home().copy(tvName = "TCL 55C755", tclRemoteKeys = true), {}, {}) },
         // 0.3.3 D2 (issue #3): the new home screen isn't on the TV. Why, and the next step when there is one.
         Shot("home_not_on_tv_wizard_wifi") { HomeScreen(notOnTv(NotOnTv(HomeBlock.WIZARD_WIFI, "Xiaomi", setupAgain = true)), {}, {}) },
         Shot("home_not_on_tv_unlisted") { HomeScreen(notOnTv(NotOnTv(HomeBlock.WIZARD_STAYS_ON, "Hisense", unlisted = true, helpAddTv = true), "Hisense 32A4200G"), {}, {}) },

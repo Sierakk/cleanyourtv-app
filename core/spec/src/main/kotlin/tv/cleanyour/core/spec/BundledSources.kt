@@ -13,17 +13,31 @@ private fun resourceBytes(path: String): ByteArray? = BundledProfileSource::clas
 // examples. resolve(): an exact profile by model or device (with brand, SDK range and
 // fingerprint prefix when the profile sets them; the highest score, then the longest fingerprint
 // prefix), else the brand sure set (D26), else None with the generic stock launcher allowlist.
-class BundledProfileSource(private val bundle: ProfileBundle = bundled) : ProfileSource {
+//
+// Test build: a candidate list (Profile.isCandidate, only in a build with -Pcyt.candidates=true) is
+// the exact profile only when no tested list matches and the person chose to try it on this phone
+// (`consent`); otherwise the TV resolves as it would without it, to the brand sure set or None.
+class BundledProfileSource(private val bundle: ProfileBundle = bundled, private val consent: CandidateConsent? = null) : ProfileSource {
     override suspend fun all(): List<Profile> = bundle.profiles
 
-    override suspend fun resolve(facts: DeviceFacts): ProfileResolution = resolveNow(facts)
+    override suspend fun resolve(facts: DeviceFacts): ProfileResolution {
+        val candidate = candidateFor(facts)
+        return resolveNow(facts, tryCandidate = candidate != null && consent?.tries(candidate.id) == true)
+    }
 
     fun sureSets(): List<SureSet> = bundle.sureSets
 
-    fun resolveNow(facts: DeviceFacts): ProfileResolution {
-        val exact = bundle.profiles.mapNotNull { p -> score(p, facts)?.let { it to p } }
+    // The candidate list this TV would get, or null: a tested list matches, or none of either does.
+    fun candidateFor(facts: DeviceFacts): Profile? =
+        if (best(facts, candidates = false) != null) null else best(facts, candidates = true)
+
+    private fun best(facts: DeviceFacts, candidates: Boolean): Profile? =
+        bundle.profiles.filter { it.isCandidate == candidates }.mapNotNull { p -> score(p, facts)?.let { it to p } }
             .sortedWith(compareByDescending<Pair<Int, Profile>> { it.first }.thenByDescending { specificity(it.second) }.thenBy { it.second.id })
             .firstOrNull()?.second
+
+    fun resolveNow(facts: DeviceFacts, tryCandidate: Boolean = false): ProfileResolution {
+        val exact = best(facts, candidates = false) ?: if (tryCandidate) best(facts, candidates = true) else null
         if (exact != null) return ProfileResolution.Exact(exact)
         val sure = bundle.sureSets.firstOrNull { it.brand.equals(facts.brand, ignoreCase = true) || it.brand.equals(facts.manufacturer, ignoreCase = true) }
         if (sure != null) return ProfileResolution.BrandSureSet(sure.brand, sure.groups, sure.stockLaunchers)
@@ -59,6 +73,11 @@ class BundledProfileSource(private val bundle: ProfileBundle = bundled) : Profil
         }
     }
 }
+
+// Test build: whether the person chose to try a candidate list (by its profile id) on this phone.
+// The app keeps the answer (CandidateChoices); the resolver, the engine's live check, Manage and the
+// TV report all ask the same source, so they agree on the list.
+fun interface CandidateConsent { suspend fun tries(profileId: String): Boolean }
 
 // Friendly names and one-line descriptions (English) for packages in the profiles and the dock
 // table, from facts.tsv: package, name, description, category.

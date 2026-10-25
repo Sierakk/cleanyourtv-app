@@ -1,0 +1,50 @@
+# DRAFT, NOT TESTED. Xiaomi MiTV-MSSP1 (codename nino), Android TV 9 (SDK 28), firmware PI.5925,
+# MediaTek, fingerprint Xiaomi/nino/nino:9/PI/5925:user/release-keys
+# Drafted for cleanyourtv-app issues #57 #58 #78 #176 from the TV reports in those issues, starting
+# from examples/xiaomi-mitv-mssp3-android9 (the MSSP3 on its Android 9 firmware: MediaTek, the same
+# stock home and Live TV app). Every package that list names is on this TV. Nothing has been tried
+# on an MSSP1 yet.
+# Live TV app: com.mediatek.wwtv.tvcenter. Stock launcher: com.google.android.tvlauncher (not in
+# this list).
+#
+# Apply:   TV_HOST=<tv ip> tools/disable.sh examples/xiaomi-mitv-mssp1/debloat.txt
+# Undo:    TV_HOST=<tv ip> tools/restore.sh examples/xiaomi-mitv-mssp1/debloat.txt
+# Everything is DISABLED, not uninstalled. Comment out any line you want to keep.
+#
+# Left alone on purpose (as on the MSSP3): com.mediatek.wwtv.tvcenter / tvinput* (HDMI and tuner),
+# mitv.service, com.xiaomi.mitv.mediaexplorer (Media Player), com.google.android.tv.remote.service.
+# setupwraith is installed; the reports say it stays on or owns the saved Wi-Fi, so it is not here.
+#
+# To check before this goes upstream: Wi-Fi after a restart, the remote (every key, including
+# Input and the voice button), every HDMI input, Live TV, whether katniss comes back at boot as it
+# does on the MSSP3's PI.7524.
+
+# Xiaomi + Google telemetry
+com.miui.tv.analytics
+com.xiaomi.statistic
+com.google.android.feedback
+
+# PatchWall, content rows, sponsored rows
+com.mitv.tvhome.atv                         # PatchWall
+com.mitv.tvhome.michannel                   # PatchWall channels on the Android TV home
+com.xm.webcontent
+com.xiaomi.floatingframe
+com.google.android.tvrecommendations
+android.autoinstalls.config.xiaomi.amelie   # Play auto-install of partner apps
+
+# Xiaomi background services
+com.xiaomi.mitv.tvmanager                   # "TV Manager" cleaner
+# com.xiaomi.mitv.updateservice             # firmware updates; owner's choice (updaters are ask rows in the app)
+
+# Personal choice: voice assistant
+# com.google.android.katniss                # the voice button stops working
+
+# Personal choice: Ambient and Mi WallPaper screensavers
+# com.google.android.backdrop
+# com.mitv.dream                            # stock screensaver
+
+# Preloaded apps
+com.xiaomi.mimusic2
+com.google.android.play.games
+com.google.android.videos                   # Play Movies & TV
+com.mitv.gallery                            # Mi Gallery; Media Player still opens USB photos

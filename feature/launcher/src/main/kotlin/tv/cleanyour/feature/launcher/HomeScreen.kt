@@ -112,6 +112,8 @@ fun HomeScreen(state: HomeScreenState, onIntent: (HomeScreenIntent) -> Unit, onB
                     onClick = if (busy == null) ({ onIntent(HomeScreenIntent.PreviewUpdate) }) else null)
             }
         }
+        // Issue #275: on TCL Google TV these remote buttons only reach Google TV's own home screen.
+        if (state.tclRemoteKeys) Banner(stringResource(R.string.home_tcl_remote_keys), BannerTone.INFO, Modifier.padding(top = 12.dp))
         if (state.stock != null && state.homeScreenOurs) {
             ListGroup(Modifier.padding(top = 12.dp)) {
                 ListRow(stringResource(R.string.home_row_stock), subtitle = stringResource(R.string.home_row_stock_note),

@@ -32,7 +32,9 @@ internal data class MatchMeta(
 )
 
 @Serializable
-internal data class TestedMeta(val by: String? = null, val firmware: String? = null, val daysLivedWith: Int? = null, val rebootTested: Boolean = false)
+internal data class TestedMeta(val by: String? = null, val firmware: String? = null, val daysLivedWith: Int? = null, val rebootTested: Boolean = false,
+    // Test build: a candidate list (core/spec/candidates/candidate-meta.json), never set in profile-meta.json.
+    val candidate: Boolean = false)
 
 @Serializable
 internal data class CategoryMeta(val category: String, val ask: Boolean = false)

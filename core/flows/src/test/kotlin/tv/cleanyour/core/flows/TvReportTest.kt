@@ -267,9 +267,26 @@ class TvReportTest {
         val text = TvReport.problem(about, input(), log)
         assertTrue(text.startsWith("Clean Your TV: problem report\nApp: 0.3.2 (full)\nPhone: Samsung SM-S921B, Android 16\n"), text)
         assertTrue("Model: 55A6H" in text && "Profile: brand set Hisense" in text && "Apps: 4 system, 2 other" in text)
-        assertFalse(storeDemo.value in text)
+        // Issue #375: what this app switched off is named (the TV's own apps); no other package is.
+        assertTrue("Apps: 4 system, 2 other\n\nSwitched off by this app (1):\n${storeDemo.value}\n\nDiagnostics log" in text, text)
+        assertFalse("com.hisense.smartvision" in text || "org.videolan.vlc" in text)
         assertTrue(text.endsWith("Diagnostics log (addresses, serial numbers, keys and codes removed)\n$log\n"), text)
         assertTrue("TV: none read yet" in TvReport.problem(about, null, log))
+    }
+
+    // Issue #375: "the Wi-Fi goes in and out" with no list of what was switched off, so no reply
+    // could say what to put back. The problem report now names the TV's own apps this app switched
+    // off and has not put back (the change records), and only counts the person's own apps.
+    @Test fun issue375TheProblemReportNamesWhatThisAppSwitchedOff() {
+        val vlc = PackageName("org.videolan.vlc")
+        val off = setOf(storeDemo, PackageName("com.hisense.smartvision"), vlc)
+        val text = TvReport.problem(about, input().copy(switchedOffByApp = off), "log")
+        assertTrue("Switched off by this app (3):\ncom.hisense.smartvision, com.hisense.storedemo\nand 1 app you installed (not named)\n" in text, text)
+        assertFalse(vlc.value in text)
+        // Nothing switched off: no such section, as before.
+        assertFalse("Switched off by this app" in TvReport.problem(about, input().copy(switchedOffByApp = emptySet()), "log"))
+        // The triage reads the count from the same line as in the TV report.
+        assertTrue(Regex("^Switched off by this app \\((\\d+)\\)", RegexOption.MULTILINE).containsMatchIn(text))
     }
 
     // The log can be megabytes; the report keeps its first line and the newest lines.

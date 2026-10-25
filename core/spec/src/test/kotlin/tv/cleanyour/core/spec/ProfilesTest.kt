@@ -246,7 +246,16 @@ class ProfilesTest {
         for ((f, id) in pinned) assertEquals(id, winner(f), "${f.brand} ${f.model} ${f.device} ${f.sdk} ${f.fingerprint}")
         // Each profile, asked with its own keys, resolves to itself, except the one superseded list;
         // and the ties settled by id are exactly these.
-        val profiles = BundledProfileSource.bundled.profiles
+        // Test build: a candidate list is never the winner without the person's answer; with it, each
+        // one, asked with its own keys, resolves to itself (no tested list matches those keys).
+        for (c in BundledProfileSource.bundled.profiles.filter { it.isCandidate }) {
+            val m = c.match
+            val own = facts(m.models.first(), m.devices.first(), m.brand!!, m.sdkMin!!)
+            assertEquals(null, winner(own), c.id)
+            assertEquals(c.id, source.candidateFor(own)?.id, c.id)
+            assertEquals(c.id, (source.resolveNow(own, tryCandidate = true) as? ProfileResolution.Exact)?.profile?.id, c.id)
+        }
+        val profiles = BundledProfileSource.bundled.profiles.filter { !it.isCandidate }
         val ties = mutableSetOf<Set<String>>()
         for (pr in profiles) {
             val m = pr.match
@@ -270,20 +279,21 @@ class ProfilesTest {
     }
 
     @Test fun bundledProfilesEqualAFreshParse() {
-        val bundle = BundledProfileSource.bundled
+        // Test build: the candidate lists (CandidatesTest) come after the upstream profiles.
+        val bundle = BundledProfileSource.bundled.let { b -> b.copy(profiles = b.profiles.filter { !it.isCandidate }) }
         assertEquals("9071ec8", bundle.upstreamCommit)
         assertEquals(examples.map { it.folder }, bundle.profiles.map { it.id })
         for (e in examples) assertEquals(DebloatTxtParser.parse(e.debloatTxt, e.folder), bundle.profiles.first { it.id == e.folder }, e.folder)
-        assertEquals(SureSetGenerator.generate(bundle.profiles), bundle.sureSets)
+        assertEquals(SureSetGenerator.generate(bundle.profiles, BundledFactsTable.bundled), bundle.sureSets)
         // Codec round trip.
         assertEquals(bundle, ProfileBundleJson.decode(ProfileBundleJson.encode(bundle)))
         assertEquals(ProfileMeta.bundled.upstreamCommit, bundle.upstreamCommit)
     }
 
     @Test fun sureSetsFollowD26() {
-        val profiles = BundledProfileSource.bundled.profiles
-        val sets = SureSetGenerator.generate(profiles)
+        val profiles = BundledProfileSource.bundled.profiles.filter { !it.isCandidate }
         val brands = profiles.groupBy { it.match.brand!!.lowercase() }
+        val sets = SureSetGenerator.generate(profiles, BundledFactsTable.bundled).filter { brands.getValue(it.brand.lowercase()).size >= 3 }
         assertEquals(brands.filterValues { it.size >= 3 }.keys.sorted(), sets.map { it.brand.lowercase() })
         assertTrue(sets.any { it.brand == "Xiaomi" } && sets.any { it.brand == "TCL" })
         val keep = profiles.flatMap { it.neverDisable }.toSet()
@@ -302,6 +312,90 @@ class ProfilesTest {
         println("sure sets: " + sets.joinToString { s -> "${s.brand}=" + s.groups.flatMap { it.packages }.joinToString("/") { it.name.value } })
     }
 
+    // The eight full sets (brands with three or more lists) are the ones 0.3.4 shipped, byte for
+    // byte: the digest of their brand, lists, groups, rows and stock launchers in 0.3.4's profiles.json.
+    @Test fun theFullSetsAreThoseOf034() {
+        val profiles = BundledProfileSource.bundled.profiles.filter { !it.isCandidate }
+        val brands = profiles.groupBy { it.match.brand!!.lowercase() }
+        val sets = BundledProfileSource.bundled.sureSets
+        val full = sets.takeWhile { brands.getValue(it.brand.lowercase()).size >= 3 }
+        assertEquals(listOf("Amazon", "Hisense", "Panasonic", "Philips", "Sony", "TCL", "XGIMI", "Xiaomi"), full.map { it.brand })
+        assertEquals(mapOf("Amazon" to 26, "Hisense" to 9, "Panasonic" to 2, "Philips" to 12, "Sony" to 28, "TCL" to 26, "XGIMI" to 2, "Xiaomi" to 29),
+            full.associate { s -> s.brand to s.groups.sumOf { it.packages.size } })
+        val canon = full.joinToString("") { s ->
+            "${s.brand}|${s.profileIds.joinToString(",")}\n" +
+                s.groups.joinToString("") { g -> "${g.id}|${g.title}|${g.default}\n" + g.packages.joinToString("") { "${it.name.value}|${it.note ?: ""}\n" } } +
+                s.stockLaunchers.joinToString(",") { it.flat } + "\n"
+        }
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(canon.encodeToByteArray()).joinToString("") { "%02x".format(it) }
+        assertEquals("a5c18d717e67bc1abd3ef0d22adac5e82db876411f1e1c77ffaf65f4d8d93e6e", digest)
+        // The careful sets come after every full set, so a full set wins when both match a TV.
+        assertTrue(sets.drop(full.size).all { brands.getValue(it.brand.lowercase()).size < 3 })
+    }
+
+    // D26 amendment (0.3.5): brands with one or two lists get a careful set, and only of the six
+    // packages reviewed for it; its stock launchers are the generic ones, so the home screen
+    // decision is the one a TV with no set gets.
+    @Test fun carefulSetsForBrandsWithOneOrTwoLists() {
+        val profiles = BundledProfileSource.bundled.profiles.filter { !it.isCandidate }
+        val brands = profiles.groupBy { it.match.brand!!.lowercase() }
+        val careful = BundledProfileSource.bundled.sureSets.filter { brands.getValue(it.brand.lowercase()).size < 3 }
+        val six = setOf("com.google.android.feedback", "com.android.printspooler", "com.android.tv.feedbackconsent", "com.android.adservices.api",
+            "com.android.ondevicepersonalization.services", "com.android.federatedcompute.services").map(::p).toSet()
+        assertEquals(six, SureSetGenerator.CAREFUL_PACKAGES)
+        val union = careful.flatMap { s -> s.groups.flatMap { g -> g.packages.map { it.name } } }.toSet()
+        assertTrue(six.containsAll(union), "careful sets hold only the reviewed packages: ${union - six}")
+        assertEquals(six, union, "every reviewed package is in some careful set")
+        assertEquals(careful.map { it.brand.lowercase() }.sorted(), careful.map { it.brand.lowercase() })
+        fun pkgs(vararg names: String) = names.map(::p).toSet()
+        // The brands of the reported TVs the change is for (docs/lists-0.3.5, the per-brand table).
+        val reported = mapOf(
+            "Skyworth" to pkgs("com.google.android.feedback", "com.android.tv.feedbackconsent"),
+            "SHARP" to pkgs("com.google.android.feedback", "com.android.tv.feedbackconsent"),
+            "OnePlus" to pkgs("com.google.android.feedback"),
+            "onn" to pkgs("com.google.android.feedback", "com.android.tv.feedbackconsent", "com.android.printspooler"),
+            "Haier" to pkgs("com.google.android.feedback"),
+            "google" to pkgs("com.google.android.feedback", "com.android.tv.feedbackconsent"),
+            "Expressluck" to six - p("com.android.printspooler"),
+            "SkyworthDigital" to six,
+        )
+        for ((brand, want) in reported) assertEquals(want, careful.single { it.brand == brand }.groups.flatMap { g -> g.packages.map { it.name } }.toSet(), brand)
+        val askedSomewhere = profiles.flatMap { pr -> pr.groups.filter { it.default != GroupDefault.DISABLE }.flatMap { g -> g.packages.map { it.name } } }.toSet()
+        val named = profiles.flatMap { pr -> pr.neverDisable + pr.stockLaunchers.map { it.pkg } + listOfNotNull(pr.setupWraith, pr.liveTv) }.toSet()
+        for (s in careful) {
+            assertEquals(KnownLaunchers.generic, s.stockLaunchers, s.brand)
+            val mine = brands.getValue(s.brand.lowercase())
+            assertEquals(mine.map { it.id }.sorted(), s.profileIds, s.brand)
+            for (g in s.groups) {
+                assertEquals(GroupDefault.DISABLE, g.default, s.brand)
+                assertTrue(g.id in setOf("ads", "tracking", "preloads"), "${s.brand} ${g.id}")
+                for (e in g.packages) {
+                    assertTrue(e.name !in askedSomewhere && e.name !in named, "${s.brand} ${e.name}")
+                    for (pr in mine) assertTrue(pr.groups.any { it.default == GroupDefault.DISABLE && e.name in it.packages.map { x -> x.name } }, "${s.brand} ${e.name} not off in ${pr.id}")
+                    val off = profiles.count { pr -> pr.groups.any { it.default == GroupDefault.DISABLE && e.name in it.packages.map { x -> x.name } } }
+                    assertTrue(off >= SureSetGenerator.CAREFUL_MIN_LISTS, "${e.name} off in $off lists")
+                    assertTrue(BundledFactsTable.bundled.getValue(e.name).category in setOf("ads", "tracking", "preloads"), e.name.value)
+                }
+            }
+        }
+        println("careful sets: " + careful.joinToString { s -> "${s.brand}=" + s.groups.flatMap { it.packages }.joinToString("/") { it.name.value } })
+    }
+
+    // A TV of a careful-set brand without an exact list resolves to the careful set with the generic
+    // stock launchers, the same launchers ProfileResolution.None gives.
+    @Test fun aCarefulSetResolvesWithTheGenericLaunchers() = runBlocking<Unit> {
+        val source = BundledProfileSource()
+        val mi = Fixtures.miTv().facts()
+        val sharp = source.resolve(mi.copy(brand = "SHARP", manufacturer = "SHARP", model = "AQUOS_TVE19A", device = "sindang", sdk = 30))
+        assertTrue(sharp is ProfileResolution.BrandSureSet && sharp.brand == "SHARP", sharp.toString())
+        assertEquals(KnownLaunchers.generic, sharp.stockLaunchers)
+        assertEquals(setOf(p("com.google.android.feedback"), p("com.android.tv.feedbackconsent")), sharp.sureSet.flatMap { g -> g.packages.map { it.name } }.toSet())
+        // A brand with a full set keeps it when its maker also has a careful set.
+        val sonyBySkyworth = source.resolve(mi.copy(brand = "Sony", manufacturer = "Skyworth", model = "X1", device = "x1"))
+        assertTrue(sonyBySkyworth is ProfileResolution.BrandSureSet && sonyBySkyworth.brand == "Sony", sonyBySkyworth.toString())
+        assertEquals(ProfileResolution.None(KnownLaunchers.generic), source.resolve(mi.copy(brand = "Acme", manufacturer = "Acme", model = "X1", device = "x1")))
+    }
+
     // RF-SAFETY-250 (d): TCL Live registers a TV input, and TV inputs are never default-off, so every
     // list that names it asks first and the TCL sure set leaves it out.
     @Test fun tclLiveIsAlwaysAnAskRow() {
@@ -313,7 +407,7 @@ class ProfilesTest {
             val groups = pr.groups.filter { g -> g.packages.any { it.name == live } }
             assertTrue(groups.none { it.default == GroupDefault.DISABLE }, "${pr.id}: ${groups.map { it.id }}")
         }
-        val tcl = SureSetGenerator.generate(profiles).single { it.brand.equals("TCL", ignoreCase = true) }
+        val tcl = SureSetGenerator.generate(profiles, BundledFactsTable.bundled).single { it.brand.equals("TCL", ignoreCase = true) }
         assertTrue(tcl.groups.flatMap { it.packages }.none { it.name == live })
     }
 
@@ -339,7 +433,7 @@ class ProfilesTest {
         val profiles = BundledProfileSource.bundled.profiles
         for (pr in profiles) for (g in pr.groups.filter { it.default == GroupDefault.DISABLE }) for (e in g.packages)
             if (guarded(e.name) && e.name !in pr.neverDisable) offenders += "${pr.id} ${e.name.value} (${g.id})"
-        for (sure in SureSetGenerator.generate(profiles)) for (g in sure.groups) for (e in g.packages)
+        for (sure in SureSetGenerator.generate(profiles, BundledFactsTable.bundled)) for (g in sure.groups) for (e in g.packages)
             if (guarded(e.name)) offenders += "sure set ${sure.brand} ${e.name.value}"
         assertEquals(emptyList(), offenders, "default-off accessibility, remote or pairing packages")
         val all = profiles.associateBy { it.id }
@@ -392,7 +486,7 @@ class ProfilesTest {
     @Test fun factsCoverTheReferenceProfileTheSureSetsAndTheDockTable() {
         val facts = BundledFactsTable()
         val needed = profile("xiaomi-mitv-axso0").groups.flatMap { g -> g.packages.map { it.name } } +
-            SureSetGenerator.generate(BundledProfileSource.bundled.profiles).flatMap { s -> s.groups.flatMap { g -> g.packages.map { it.name } } } +
+            BundledProfileSource.bundled.sureSets.flatMap { s -> s.groups.flatMap { g -> g.packages.map { it.name } } } +
             DockRankingImpl.ranking("en-IN") + DockRankingImpl.ranking("en-US") + DockRankingImpl.ranking("en-GB") + p("com.android.tv")
         val missing = needed.distinct().filter { facts.lookup(it) == null }
         assertEquals(emptyList(), missing)

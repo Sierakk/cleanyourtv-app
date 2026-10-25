@@ -69,8 +69,8 @@ class Harness(val scope: TestScope, val tv: ScriptedTv = ScriptedTv(Samples.snap
     val planner = DefaultPlanner(clock, idGen, renderer, transport, "0.1.0")
 
     fun engine(
-        liveCheckEveryMs: Long = 2_000, thumbnailEveryMs: Long = 5_000, journal: Journal = this.journal,
-    ) = DefaultEngine(renderer, prober, journal, snapshots, plans, clock, scope.backgroundScope, profiles, liveCheckEveryMs, thumbnailEveryMs)
+        liveCheckEveryMs: Long = 2_000, thumbnailEveryMs: Long = 5_000, journal: Journal = this.journal, log: (String) -> Unit = {},
+    ) = DefaultEngine(renderer, prober, journal, snapshots, plans, clock, scope.backgroundScope, profiles, liveCheckEveryMs, thumbnailEveryMs, log = log)
 
     fun pass(): GatePass = gate.mint(tv.tvId)
 

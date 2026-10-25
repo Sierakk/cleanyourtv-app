@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import tv.cleanyour.core.discovery.DiscoverySource
 import tv.cleanyour.core.discovery.FoundTv
 import tv.cleanyour.core.flows.ChipState
+import tv.cleanyour.core.flows.ConnectError
 import tv.cleanyour.core.flows.DoorPhase
 import tv.cleanyour.core.flows.Families
 import tv.cleanyour.core.flows.SetupActions
@@ -89,11 +90,11 @@ fun isConnectState(state: SetupState): Boolean =
 
 
 @Composable
-fun ConnectFlow(state: SetupState, extras: SetupExtras, actions: SetupActions, onReturning: () -> Unit, modifier: Modifier = Modifier) {
+fun ConnectFlow(state: SetupState, extras: SetupExtras, actions: SetupActions, onReturning: () -> Unit, modifier: Modifier = Modifier, onCopyError: (String) -> Unit = {}) {
     when (state) {
         is SetupState.Welcome -> WelcomeScreen(state, extras, actions, onReturning, modifier)
         is SetupState.Picker -> PickerScreen(state, extras, actions, modifier)
-        is SetupState.OpenDoor -> DoorScreen(state, extras, actions, modifier)
+        is SetupState.OpenDoor -> DoorScreen(state, extras, actions, modifier, onCopyError)
         is SetupState.PairingNeeded -> PairingScreen(state, extras, actions, modifier)
         else -> {}
     }
@@ -209,7 +210,7 @@ fun PickerScreen(state: SetupState.Picker, extras: SetupExtras, actions: SetupAc
 
 // S2a to S2d: one screen, four states; the phone advances on its own (UX 2 screen 2).
 @Composable
-fun DoorScreen(state: SetupState.OpenDoor, extras: SetupExtras, actions: SetupActions, modifier: Modifier = Modifier) {
+fun DoorScreen(state: SetupState.OpenDoor, extras: SetupExtras, actions: SetupActions, modifier: Modifier = Modifier, onCopyError: (String) -> Unit = {}) {
     // A typed address has no name until the TV answers: the chip then reads the model the TV gave
     // (the identity line's), not the address (round 3).
     val name = extras.tvName ?: state.tv.friendlyName ?: state.tv.model ?: extras.identity?.model ?: state.tv.host.ifEmpty { null }
@@ -244,6 +245,7 @@ fun DoorScreen(state: SetupState.OpenDoor, extras: SetupExtras, actions: SetupAc
             }
             DoorPhase.STEPS, DoorPhase.CONNECTING -> {
                 StepsContent(state, actions, name, brandsOpen, onBrands = { brandsOpen = !brandsOpen })
+                extras.connectError?.let { ConnectErrorCard(it, onCopyError) }
                 NotThisTv(state, actions)
             }
         }
@@ -255,6 +257,21 @@ fun DoorScreen(state: SetupState.OpenDoor, extras: SetupExtras, actions: SetupAc
             NotSeenContent(extras.allowRetries, onAsk = { actions.intent(SetupIntent.AskTvAgain); showNotSeen = false })
         }
     }
+}
+
+// 0.3.6 (issues #98, #270, #325, #468): the TV's port answered but the connection failed. What may be
+// in the way on the phone's side, and "Copy error" with a short redacted summary for an issue.
+@Composable
+private fun ConnectErrorCard(error: ConnectError, onCopy: (String) -> Unit) {
+    var copied by remember(error) { mutableStateOf(false) }
+    StopCard(
+        stringResource(R.string.door_connect_failed_title),
+        msg(R.string.door_connect_failed_body, "kind" to error.kind) + "\n\n" + stringResource(R.string.door_connect_failed_hint),
+        Modifier.padding(top = 20.dp),
+        primaryLabel = stringResource(if (copied) R.string.door_error_copied else R.string.door_copy_error),
+        onPrimary = { onCopy(error.summary); copied = true },
+        primaryGuarded = false,
+    )
 }
 
 // Start goes straight to the one device discovery found, which may not be the TV (emulator run,

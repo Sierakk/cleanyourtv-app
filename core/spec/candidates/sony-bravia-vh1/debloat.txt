@@ -1,0 +1,61 @@
+# DRAFT, NOT TESTED. Sony BRAVIA VH1 (ro.product.model "BRAVIA VH1", device BRAVIA_VH1, products
+# BRAVIA_VH1_UC and BRAVIA_VH1_PA, MediaTek), Android TV 12 (SDK 31) with the Android TV home,
+# firmware STT2.230505.001.S137 (one report: S111), fingerprint
+# Sony/BRAVIA_VH1_<region>/BRAVIA_VH1:12/STT2.230505.001.S137/626241:user/release-keys
+# Drafted for cleanyourtv-app issues #142 #143 #178 #233 #268 from the TV reports in those issues,
+# starting from examples/sony-bravia-4k-vh21 and examples/sony-kd-55x85j (Sony Android 12 on the
+# STT2.230505.001 line, S136). Those two are Google TV sets with launcherx; the VH1 keeps the
+# Android TV home (com.google.android.tvlauncher), so nothing about their home screen applies here.
+# Every line below is a package those lists switch off and that this TV has. Every line in the
+# first three blocks is already switched off on these TVs by the app's Sony set in 0.3.3.
+# Nothing has been tried on a VH1 yet.
+#
+# Apply:   TV_HOST=<tv ip> tools/disable.sh examples/sony-bravia-vh1/debloat.txt
+# Undo:    TV_HOST=<tv ip> tools/restore.sh examples/sony-bravia-vh1/debloat.txt
+# Everything is DISABLED, not uninstalled. Comment out any line you want to keep.
+#
+# Stock launcher: com.google.android.tvlauncher. Live TV / tuner app: com.sony.dtv.tvx.
+# setupwraith is installed and the reports say it stays on (WIZARD_STAYS_ON); not in this list.
+# Keep: com.sony.dtv.tvx, com.sony.dtv.tvapi, com.sony.dtv.sonysystemservice, the
+# com.sony.dtv.tvinput.* services, Bravia Sync, com.uei.quicksetsdk.sony (IR control of cable boxes
+# and soundbars, HDMI-CEC), com.google.android.tv.remote.service, com.google.android.tts.
+#
+# To check before this goes upstream: Wi-Fi after a restart, the remote (every key, including
+# Input and the mic button), every HDMI input, Live TV, Bravia Sync, casting.
+
+# tracking
+tv.samba.ssm                         # Samba TV fingerprints what's on screen
+tv.samba.ssm.ui
+com.sonyericsson.idd.agent           # Sony IDD usage-data agent
+com.sony.dtv.usercontext             # user context providers, boot receiver only
+com.qterics.da.product               # Qterics device agent
+com.sony.dtv.da.service              # remote-support session service
+com.sony.dtv.sonybugreportsys        # bug report uploader
+com.google.android.feedback
+
+# ads and recommendations
+com.sony.dtv.promos
+com.sony.dtv.sonyselect              # Sony Select app recommendations
+com.sony.dtv.sonytab                 # Sony content tab / partner rows
+android.autoinstalls.config.sony.bravia   # partner app auto-installs
+
+# demo / shop mode
+com.sony.dtv.demosupport
+com.sony.dtv.demosystemsupport
+com.sony.dtv.multiscreendemo
+
+# preloads
+com.google.android.play.games
+com.sony.dtv.customersupport         # Help tile
+com.sony.dtv.smarthelp
+
+# Owner's choice (ask rows on the Sony lists): remove the # to switch off
+# com.google.android.katniss         # voice: the mic button stops working
+# com.sony.dtv.voicesearch
+# com.sony.dtv.assistantadapter
+# com.google.android.videos          # Google TV movies (loses access to purchases in it)
+# com.apple.atve.sony.appletv        # Apple TV app
+# com.vewd.core.integration.dia      # Vewd
+# com.vewd.core.service
+# com.sony.dtv.osat.music
+# com.sony.dtv.gestureapp            # BRAVIA CAM gestures

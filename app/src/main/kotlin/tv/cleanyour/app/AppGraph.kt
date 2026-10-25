@@ -111,7 +111,7 @@ class AppGraph(context: Context, val appVersion: String = versionOf(context), va
     // W2: the phone's ADB key and the sessions (RFC-W2-3; plain TCP, no TLS in 0.1).
     val signer = DeferredAdbSigner(workScope) { KeystoreAdbSigner.create(app) }
     val keyInfo = SignerKeyInfo(signer)
-    val sessions = AdbSessionManager(PlainSocketFactory(), signer, tls = null, clock = clock, scope = workScope)
+    val sessions = AdbSessionManager(PlainSocketFactory(), signer, tls = null, clock = clock, scope = workScope, log = { CytLog.i(it) })
 
     // W4: the probe and the bundled tables.
     // An installed APK that hashes to a pinned one has that pin's signer, so it is not copied to read it
@@ -120,7 +120,9 @@ class AppGraph(context: Context, val appVersion: String = versionOf(context), va
         tv.cleanyour.core.model.Sha256(PinnedLauncher.SHA256) to tv.cleanyour.core.model.Sha256(PinnedLauncher.SIGNER_SHA256),
         tv.cleanyour.core.model.Sha256(PinnedCurtain.SHA256) to tv.cleanyour.core.model.Sha256(PinnedCurtain.SIGNER_SHA256),
     ))
-    val profiles = BundledProfileSource()
+    // Test build: the person's answers on Setup's candidate list card, which every resolve reads.
+    val candidateChoices = tv.cleanyour.core.flows.CandidateChoices(documents)
+    val profiles = BundledProfileSource(consent = candidateChoices)
     val facts = BundledFactsTable()
 
     // W3: renderer variant A (the nohup setsid watchdog) until S12 says otherwise.
@@ -134,7 +136,7 @@ class AppGraph(context: Context, val appVersion: String = versionOf(context), va
     val snapshots = DocumentSnapshotStore(documents)       // W6
     val journal = FileJournal(dataDir)                     // tvs/<tvId>/journal/<planId>.jsonl
     val plans = DocumentPlanStore(documents)
-    val engine: Engine = LiveSessionEngine(DefaultEngine(renderer, prober, journal, snapshots, plans, clock, workScope, profiles), sessions, tvs)
+    val engine: Engine = LiveSessionEngine(DefaultEngine(renderer, prober, journal, snapshots, plans, clock, workScope, profiles, log = { CytLog.i(it) }), sessions, tvs)
 
     // W6: the restore files on the TV, the note, the zip.
     val restoreFiles = DefaultTvRestoreFiles(clock, zone)
@@ -197,6 +199,8 @@ class AppGraph(context: Context, val appVersion: String = versionOf(context), va
         curtainPin = curtainPin,   // RFC-CURTAIN-1
         store = store.rules,       // STORES-PLAN 1
         homeDecisions = homeDecisions,   // 0.3.2 B1
+        candidates = tv.cleanyour.core.flows.BundledCandidateLists(profiles, candidateChoices),   // test build
+        about = about, connectDetail = { sessions.lastConnectFailure },   // 0.3.6: "Copy error"
     )
 
     val manageDeps = ManageDeps(

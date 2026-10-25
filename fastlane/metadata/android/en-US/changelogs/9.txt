@@ -1,0 +1,1 @@
+0.3.5: more TVs get a careful clean-up. TVs from brands with one or two tested lists (Skyworth, SHARP, onn, OnePlus, Haier and others) now switch off up to six hidden feedback and advertising services. The home screen decision on these TVs stays the same. A safety guard for the ACER R4G: Setup never offers the home screen switch on it and does the clean-up alone.

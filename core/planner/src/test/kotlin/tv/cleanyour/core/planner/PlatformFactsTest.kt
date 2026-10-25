@@ -50,4 +50,17 @@ class PlatformFactsTest {
         assertFalse(TclChina.applies(cn, p.copy(platform = Platform.GOOGLE_TV)))
         assertFalse(TclChina.applies(facts, null), "not a China-market TCL")
     }
+
+    // Issue #275: TCL Google TV, told by TCL as the brand or maker and Google TV's home screen.
+    @Test fun tclGoogleTvFromTheMakerAndGoogleTvsHomeScreen() {
+        val launcherx = Component(TclGoogleTv.GOOGLE_TV_HOME, ".home.HomeActivity")
+        val gtv = tv.copy(home = HomeResolution(launcherx, listOf(HomeClaimant(launcherx, 2))))
+        val installed = tv.copy(packages = tv.packages + (launcherx.pkg to tv.packages.values.first()))
+        assertTrue(TclGoogleTv.applies(facts.copy(brand = "TCL", manufacturer = "TCL"), gtv))
+        assertTrue(TclGoogleTv.applies(facts.copy(brand = "Roku", manufacturer = "tcl"), installed), "TCL as the maker, launcherx installed")
+        assertTrue(TclGoogleTv.applies(facts.copy(brand = "TCL", manufacturer = "Sharp"), gtv), "TCL as the brand")
+        assertFalse(TclGoogleTv.applies(facts.copy(brand = "TCL", manufacturer = "TCL"), tv), "a TCL Android TV with the older home screen")
+        assertFalse(TclGoogleTv.applies(facts.copy(brand = "TCL", manufacturer = "TCL"), null), "without a snapshot")
+        assertFalse(TclGoogleTv.applies(facts.copy(brand = "Sony", manufacturer = "Sony"), gtv), "another maker's Google TV")
+    }
 }

@@ -1,0 +1,49 @@
+# DRAFT, NOT TESTED. Philips 2020/2021 UHD Android TV (ro.product.model "2020/2021 UHD Android TV",
+# manufacturer TPV, device PH0M_EA_T32), Android TV 11 (API 30), firmware RTM2.210929.098,
+# fingerprint Philips/PH0M_LT_T32/PH0M_EA_T32:11/RTM2.210929.098/200321:user/release-keys
+# Drafted for cleanyourtv-app issue #13 from the TV report in that issue, starting from
+# examples/philips-50pus8517 and examples/philips-55oled707 (Philips Android TV 11, the same stock
+# home). Every line below is a package those lists switch off and that this TV has.
+# Unlike those sets, PH0M runs a MediaTek TV stack (Live TV is com.mediatek.wwtv.tvcenter and the
+# org.droidtv TV layer of the PH1M sets, playtv, xtv, hdmiservice, fastip, is not installed), so
+# nothing from their TV layer applies here. Nothing has been tried on a PH0M set yet.
+#
+# Apply:   TV_HOST=<tv ip> tools/disable.sh examples/philips-2020-uhd-ph0m/debloat.txt
+# Undo:    TV_HOST=<tv ip> tools/restore.sh examples/philips-2020-uhd-ph0m/debloat.txt com.google.android.tvlauncher
+# Everything is DISABLED, not uninstalled. Comment out any line you want to keep.
+#
+# Stock launcher: com.google.android.tvlauncher (.MainActivity). Not in this list.
+# setupwraith is installed and the report says it stays on (WIZARD_STAYS_ON); it is not in this list.
+#
+# KEEP: org.droidtv.eum (the help app other Philips apps bind), org.droidtv.nettvregistration,
+# com.google.android.tv.remote.service, the MediaTek TV stack (com.mediatek.tvinput,
+# com.mediatek.tv.service, com.mediatek.wwtv.tvcenter, com.mediatek.wwtv.setupwizard,
+# com.mediatek.wwtv.mediaplayer), com.mediatek.tv.factory and mediatek.factorymenu.ui, org.droidtv,
+# org.droidtv.ambisvc (Ambilight), org.droidtv.icp, com.tpv.xmic.ots.cms.client: not in any Philips
+# list, left alone.
+#
+# To check before this goes upstream: Wi-Fi after a restart, the remote (every key, including
+# SOURCES and the voice button), every HDMI input, Live TV and a channel scan, Ambilight, casting.
+
+# Philips analytics and the app storefront
+org.droidtv.candeebug                    # "DAC" analytics uploader
+org.droidtv.gel                          # metrics collector that runs inside candeebug
+org.droidtv.nettv.market                 # "Smart TV Collection" app storefront
+
+# Google extras
+com.google.android.feedback              # Market Feedback Agent
+com.google.android.partnersetup          # partner referrer / attribution
+com.google.android.onetimeinitializer    # runs once at first setup, nothing afterwards
+com.google.android.syncadapters.calendar # Google Calendar sync
+com.google.android.play.games
+org.droidtv.android.fitness             # Fitness Buddy (already off on this TV)
+com.google.android.tvrecommendations     # recommendation rows; also the notification panel, switch off after the stock home
+
+# Owner's choice (ask rows on the Philips lists): remove the # to switch off
+# com.google.android.katniss             # Assistant and voice search; the voice button stops working
+# com.google.android.sss.authbridge      # set-up-from-phone helper
+# com.google.android.videos              # Google TV / Play Movies (holds purchased films)
+# com.google.android.marvin.talkback     # TalkBack screen reader; keep if anyone needs it
+# com.google.android.youtube.tv
+# com.netflix.ninja
+# com.disney.disneyplus

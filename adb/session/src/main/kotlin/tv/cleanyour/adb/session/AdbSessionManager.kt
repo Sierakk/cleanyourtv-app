@@ -37,11 +37,25 @@ class AdbSessionManager(
     private val clock: Clock = SystemClock,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     private val blobIo: CoroutineContext = Dispatchers.IO,
+    // 0.3.6: the redacting diagnostics log; it gets the exception class and errno reason of a failed
+    // socket connect (ConnectFailure), never an address.
+    private val log: (String) -> Unit = {},
 ) : SessionManager {
     private val sessions = ConcurrentHashMap<TvId, AdbTvSession>()
     private val mutableStates = MutableStateFlow<Map<TvId, ConnectionState>>(emptyMap())
     override val states: StateFlow<Map<TvId, ConnectionState>> = mutableStates.asStateFlow()
     private val openMutex = Mutex()
+
+    // 0.3.6: why the last socket connect failed (ConnectFailure.detail), for Setup's "Copy error";
+    // null once a socket connects.
+    @Volatile var lastConnectFailure: String? = null
+        private set
+
+    private fun noteConnectFailure(e: Throwable) {
+        val detail = ConnectFailure.detail(e)
+        lastConnectFailure = detail
+        log("session: socket connect failed: $detail")
+    }
 
     private fun publish(tvId: TvId, state: ConnectionState) {
         mutableStates.update { it + (tvId to state) }
@@ -66,8 +80,10 @@ class AdbSessionManager(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            noteConnectFailure(e)
             return@withLock failed(expected, classifyConnectFailure(e))
         }
+        lastConnectFailure = null
         val conn = try {
             AdbConnection.open(
                 socket, signer, tls,
@@ -91,7 +107,7 @@ class AdbSessionManager(
                 existing.adopt(conn, endpoint)
                 return@withLock OpenResult.Ok(existing)
             }
-            val session = AdbTvSession(identity, endpoint, conn, Link(socketFactory, signer, tls, onAwaitingAllow), clock, scope, ::publish, ::remove, blobIo)
+            val session = AdbTvSession(identity, endpoint, conn, Link(socketFactory, signer, tls, onAwaitingAllow, ::noteConnectFailure), clock, scope, ::publish, ::remove, blobIo)
             sessions[identity.tvId] = session
             publish(identity.tvId, session.state.value)
             OpenResult.Ok(session)

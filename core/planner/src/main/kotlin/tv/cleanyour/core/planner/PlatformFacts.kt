@@ -48,3 +48,18 @@ object TclChina {
     fun applies(facts: DeviceFacts, exact: Profile?): Boolean =
         (exact == null || exact.platform == Platform.TCL_CN) && isTclChina(facts)
 }
+
+// TCL Google TV sets (issue #275): the firmware sends the remote's Settings (gear), Netflix and
+// YouTube buttons only to Google TV's own home screen, so with the new home screen they do nothing.
+// TCL as the brand or the maker, and Google TV's home screen (launcherx) installed or answering Home.
+// Only a warning before the switch; it never changes what is planned. Not a frozen interface.
+object TclGoogleTv {
+    const val BRAND = "tcl"
+    val GOOGLE_TV_HOME = PackageName("com.google.android.apps.tv.launcherx")
+
+    fun applies(facts: DeviceFacts, snapshot: Snapshot?): Boolean {
+        if (!BRAND.equals(facts.brand.trim(), ignoreCase = true) && !BRAND.equals(facts.manufacturer.trim(), ignoreCase = true)) return false
+        val s = snapshot ?: return false
+        return GOOGLE_TV_HOME in s.packages || s.home.resolved?.pkg == GOOGLE_TV_HOME || s.home.claimants.any { it.component.pkg == GOOGLE_TV_HOME }
+    }
+}

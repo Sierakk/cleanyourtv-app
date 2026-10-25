@@ -3,6 +3,8 @@
 
 package tv.cleanyour.feature.setup
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +33,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import java.text.SimpleDateFormat
@@ -92,6 +95,7 @@ import tv.cleanyour.ui.design.component.ProtectedGroupSection
 import tv.cleanyour.ui.design.component.SafetyLine
 import tv.cleanyour.ui.design.component.ScreenScaffold
 import tv.cleanyour.ui.design.component.ScreenTitle
+import tv.cleanyour.ui.design.component.SecondaryButton
 import tv.cleanyour.ui.design.component.SheetHeader
 import tv.cleanyour.ui.design.component.SmallGlassButton
 import tv.cleanyour.ui.design.component.Spinner
@@ -130,7 +134,7 @@ fun SetupFlow(
     onRoute: (String) -> Unit = {},
 ) {
     when (state) {
-        is SetupState.Probing -> ProbingScreen(state, extras, modifier)
+        is SetupState.Probing -> ProbingScreen(state, extras, modifier, actions)
         is SetupState.Found -> FoundScreen(state, extras, actions, modifier, onCopyCommands, onHelpAddTv = { onRoute("report/tv/${state.tvId.value}") })
         is SetupState.Working -> WorkingScreen(state, extras, actions, modifier)
         is SetupState.Check -> CheckScreen(state, extras, actions, modifier, nowMs)
@@ -149,13 +153,39 @@ fun dateTime(ms: Long, locale: java.util.Locale): String = SimpleDateFormat("d M
 
 // S2d to S3: the probe's progress while the summary fills in.
 @Composable
-fun ProbingScreen(state: SetupState.Probing, extras: SetupExtras, modifier: Modifier = Modifier) {
+fun ProbingScreen(state: SetupState.Probing, extras: SetupExtras, modifier: Modifier = Modifier, actions: SetupActions = tv.cleanyour.core.flows.NoSetupActions) {
+    val candidate = extras.candidate
     ScreenScaffold(Glow.Tv, modifier, topBar = { TopBar(extras) }) {
-        StatusLine(stringResource(R.string.probing_line), Modifier.padding(start = 4.dp, top = 20.dp))
-        val stages = tv.cleanyour.core.probe.ProbeStage.entries
-        val probingCd = stringResource(R.string.probing_progress_cd)
-        ProgressBar((stages.indexOf(state.stage) + 1f) / stages.size, Modifier.padding(top = 16.dp).semantics { contentDescription = probingCd })
+        if (candidate != null) CandidateCard(candidate.issue, actions)
+        else {
+            StatusLine(stringResource(R.string.probing_line), Modifier.padding(start = 4.dp, top = 20.dp))
+            val stages = tv.cleanyour.core.probe.ProbeStage.entries
+            val probingCd = stringResource(R.string.probing_progress_cd)
+            ProgressBar((stages.indexOf(state.stage) + 1f) / stages.size, Modifier.padding(top = 16.dp).semantics { contentDescription = probingCd })
+        }
     }
+}
+
+// Test build: the TV's list is a candidate (made from reports of the same model, not tested yet).
+// Nothing is planned until the person answers: try the test list, or stay with the careful set.
+@Composable
+internal fun CandidateCard(issue: String?, actions: SetupActions) {
+    val c = CytTheme.colors
+    val shape = CytTheme.shapes.medium
+    Overline(stringResource(R.string.candidate_overline), Modifier.padding(top = 8.dp))
+    Column(Modifier.padding(top = 10.dp).fillMaxWidth().background(c.surface2, shape).border(1.dp, c.rim, shape).padding(20.dp)) {
+        Text(stringResource(R.string.candidate_title), Modifier.semantics { heading() }, color = c.textPrimary, style = CytTheme.type.titleLarge)
+        Body(stringResource(R.string.candidate_body), Modifier.padding(top = 8.dp))
+        Body(if (issue != null) msg(R.string.candidate_ask_issue, "issue" to issue) else stringResource(R.string.candidate_ask), Modifier.padding(top = 12.dp))
+        for (id in listOf(R.string.candidate_check_wifi, R.string.candidate_check_remote, R.string.candidate_check_hdmi, R.string.candidate_check_live_tv, R.string.candidate_check_casting))
+            Body("\u2022  " + stringResource(id), Modifier.padding(start = 8.dp, top = 6.dp), color = c.textPrimary)
+        ActionColumn(Modifier.padding(top = 20.dp)) {
+            PrimaryButton(stringResource(R.string.candidate_try), { actions.chooseCandidate(true) })
+            SecondaryButton(stringResource(R.string.candidate_careful), { actions.chooseCandidate(false) })
+        }
+        Body(stringResource(R.string.candidate_careful_note), Modifier.padding(top = 12.dp))
+    }
+    Gap(8.dp)
 }
 
 // S3 What we found (D4, D17 grey line, UX 2 rules behind the numbers, UX 4.6).
@@ -220,6 +250,9 @@ fun FoundScreen(
                 else -> msg(R.string.found_home_row, "dock" to dock)
             }
             TextActionRow(row, stringResource(R.string.found_home_change), { actions.intent(SetupIntent.Open(Sheet.DOCK)) }, Modifier.padding(top = 8.dp))
+            // Issue #275: TCL's firmware sends these remote buttons only to Google TV's own home
+            // screen, so the person hears it before the switch, with the way back.
+            if (extras.tclRemoteKeys) Banner(stringResource(R.string.found_tcl_remote_keys), BannerTone.INFO, Modifier.padding(top = 12.dp))
         } else {
             // RF-PROFILES-63 P1, P2: an older Android, or a home screen we do not know, says so plainly;
             // RF-SAFETY-250: so does a switch skipped up front for safety.
@@ -229,7 +262,7 @@ fun FoundScreen(
                 HomeBlock.HOME_CHANGED -> stringResource(R.string.found_home_changed)
                 // A TV no exact profile knows keeps its wizard on whoever saved the Wi-Fi, so the
                 // "forget and re-add the network" advice would not help there.
-                HomeBlock.WIZARD_WIFI -> stringResource(if (extras.unknownModel) R.string.found_home_wizard_wifi_unlisted else R.string.found_home_wizard_wifi)
+                HomeBlock.WIZARD_WIFI -> stringResource(if (extras.unknownModel || extras.candidateTried) R.string.found_home_wizard_wifi_unlisted else R.string.found_home_wizard_wifi)
                 HomeBlock.WIZARD_WIFI_UNKNOWN -> stringResource(R.string.found_home_wizard_wifi_unknown)
                 HomeBlock.CASTING -> stringResource(R.string.found_home_casting)
                 HomeBlock.BOOT_LOOP -> stringResource(R.string.found_home_boot_loop)
@@ -519,11 +552,13 @@ fun CheckScreen(state: SetupState.Check, extras: SetupExtras, actions: SetupActi
     }
 }
 
-// The stops worth a report: a step the TV refused, an install that failed, a probe that failed, a run
-// cut off by the app closing, and the old home screen put back after a lost connection. The cards
+// The stops worth a report: a step the TV refused, an install that failed, a probe that failed, a plan
+// the app refused to make (0.3.4: the report carries the reason), a run cut off by the app closing,
+// and the old home screen put back after a lost connection. The cards
 // whose own button already opens the report (home screen unknown, "Something looked wrong", "Help
 // me") are not in it.
-private val REPORT_CASES = setOf(StopCase.STEP_FAILED, StopCase.INSTALL_FAILED, StopCase.PROBE_FAILED, StopCase.RESUME_AFTER_DEATH, StopCase.HOME_PUT_BACK)
+private val REPORT_CASES = setOf(StopCase.STEP_FAILED, StopCase.INSTALL_FAILED, StopCase.PROBE_FAILED, StopCase.PLAN_REFUSED, StopCase.RESUME_AFTER_DEATH,
+    StopCase.HOME_PUT_BACK)
 
 // The home cases: their card offers "Show details" with the run's lines (D21).
 private val HOME_CASES = setOf(

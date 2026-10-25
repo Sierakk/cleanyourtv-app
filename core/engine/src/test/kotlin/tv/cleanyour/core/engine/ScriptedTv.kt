@@ -65,6 +65,10 @@ class ScriptedTv(initial: Snapshot = Samples.miTvSnapshot()) : TvSession {
     var dropAtExec: Int? = null                                // the Nth exec (1-based) throws Transport.Closed and the session goes Reconnecting
     var dropOnLine: ((String) -> Boolean)? = null
     var installOutcome: InstallOutcome = InstallOutcome.Installed
+    // Issues #80, #367: the streamed install ends with this error while the connection stays up;
+    // with installStreamInstallsFirst the TV installed the APK before the error.
+    var installStreamError: AdbError? = null
+    var installStreamInstallsFirst = false
     var persistentOverride: Set<PackageName> = emptySet()
     var startFails = false
     var requestedPermissions: Map<PackageName, List<String>> = emptyMap()   // printed under "requested permissions:" in the package's dump
@@ -208,6 +212,10 @@ class ScriptedTv(initial: Snapshot = Samples.miTvSnapshot()) : TvSession {
 
     override suspend fun installStream(apk: BlobRef, size: Long, onProgress: (Long) -> Unit): InstallOutcome {
         gate("install-stream ${apk.sha256.hex}")
+        installStreamError?.let { e ->
+            if (installStreamInstallsFirst) installBytes(blobs[apk.sha256] ?: error("no blob"))
+            throw AdbException(e)
+        }
         val o = installOutcome
         if (o is InstallOutcome.Failed) return o
         val r = installBytes(blobs[apk.sha256] ?: error("no blob"))

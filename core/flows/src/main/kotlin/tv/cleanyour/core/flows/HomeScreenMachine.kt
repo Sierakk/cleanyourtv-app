@@ -11,6 +11,7 @@ import tv.cleanyour.core.model.TvId
 import tv.cleanyour.core.planner.FireOs
 import tv.cleanyour.core.planner.Plan
 import tv.cleanyour.core.planner.PlanRequest
+import tv.cleanyour.core.planner.TclGoogleTv
 import tv.cleanyour.core.probe.PressedKey
 import tv.cleanyour.core.spec.DockLayers
 
@@ -58,6 +59,7 @@ data class HomeScreenState(
     val buttonsSupported: Boolean = false,              // the new home screen is the TV's and reads "scan:" app_keys (2.6, versionCode 7, and later)
     val capture: ButtonCapture? = null,                 // the press being waited for or just read; null with no Remote buttons sheet step open
     val notOnTv: NotOnTv? = null,                       // 0.3.3 D2: the new home screen is not on this TV; no dock or look rows
+    val tclRemoteKeys: Boolean = false,                 // issue #275: a TCL Google TV, whose remote's gear, Netflix and YouTube buttons need its own home screen
 )
 
 sealed interface HomeScreenIntent {
@@ -161,16 +163,20 @@ class HomeScreenMachine(
             homeScreenOurs = tv.launcher != null, columns = columns, updateTo = updateTo(tv, packages),
             tvSideSettings = launcherVersion >= FIRST_WITH_TV_SETTINGS,
             buttons = buttons, buttonsSupported = tv.launcher != null && launcherVersion >= RemoteButtons.FIRST_WITH_SCANCODES,
-            notOnTv = notOnTv(tv, snap))))
+            notOnTv = notOnTv(tv, snap), tclRemoteKeys = snap != null && TclGoogleTv.applies(snap.facts, snap))))
     }
 
     // 0.3.3 D2: null while the new home screen is on the TV: Setup recorded it (tv.launcher), or the
     // newest snapshot lists it (installed, perhaps not the home screen now: "Use the TV's own home
     // screen" keeps it, and a look still applies). Without a snapshot this phone cannot tell, so the
     // rows stay and the planner's refusal is the backstop.
+    // 0.3.4 (issues #171, #187, #220): a launcher under our package name that Setup left as it is
+    // (HOME_CHANGED: installed another way, with another key) is not ours either, so the screen says
+    // why, as for issue #8, instead of offering a dock and a look for it.
     private suspend fun notOnTv(tv: tv.cleanyour.core.model.Tv, snap: tv.cleanyour.core.model.Snapshot?): NotOnTv? {
-        if (tv.launcher != null || snap == null || Launcher.pkg in snap.packages) return null
+        if (tv.launcher != null || snap == null) return null
         val reason = attempt { d.homeDecisions.load(tvId) }.getOrNull()?.block?.let { b -> HomeBlock.entries.firstOrNull { it.name == b } }
+        if (Launcher.pkg in snap.packages && reason != HomeBlock.HOME_CHANGED) return null
         val unlisted = tv.profileId == null
         val setupAgain = when (reason) {
             null, HomeBlock.NONE, HomeBlock.WIZARD_WIFI_UNKNOWN -> true

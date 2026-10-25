@@ -127,6 +127,8 @@ object ConnectShots {
 
         // S2b Connecting
         Shot("door_connecting") { Connect(door(Families.ATV, DoorPhase.CONNECTING, 2), waiting) },
+        // 0.3.6 (issues #98, #270, #325, #468): the port answered, the connection failed; the hint and "Copy error".
+        Shot("door_connect_failed") { Connect(door(Families.ATV, DoorPhase.STEPS, 2), waiting.copy(connectError = tv.cleanyour.core.flows.ConnectError("unreachable", "Clean Your TV connection error"))) },
 
         // S2c Look at the TV (Allow), and the "I don't see it on the TV" sheet before and after 3 retries
         Shot("door_allow") { Connect(door(Families.ATV, DoorPhase.ALLOW, 2, waitedMs = 5_000, fingerprint = FINGERPRINT), waiting) },

@@ -67,13 +67,12 @@ val miProfile = Profile(
 )
 
 // Every fake wired the way the app wires the real things.
-class Harness(val clock: FakeClock = FakeClock(Samples.NOW_MS)) {
+class Harness(val clock: FakeClock = FakeClock(Samples.NOW_MS), val facts: tv.cleanyour.core.spec.FactsTable = MapFactsTable()) {
     val discovery = FakeDiscovery()
     val session = FakeTvSession()
     val sessions = FakeSessionManager().apply { register(HOST, session) }
     val prober = FakeProber()
     val profiles = FakeProfileSource(listOf(miProfile))
-    val facts = MapFactsTable()
     val planner = FakePlanner()
     val engine = FakeEngine(clock)
     val credential = FakeCredentialGate(clock)
@@ -121,10 +120,12 @@ class Harness(val clock: FakeClock = FakeClock(Samples.NOW_MS)) {
     var launchable: Set<PackageName>? = null
 
     fun setupDeps(dock: DockPicker = DockPicker { _, _, _, _, _ -> listOf(PackageName("com.netflix.ninja")) }, curtainPin: tv.cleanyour.core.trust.CurtainPin? = null,
-                  savedWifi: tv.cleanyour.core.probe.SavedWifiOwners? = null, store: StoreRules = StoreRules.FULL) = SetupDeps(
+                  savedWifi: tv.cleanyour.core.probe.SavedWifiOwners? = null, store: StoreRules = StoreRules.FULL,
+                  candidates: CandidateLists? = null, diagnostics: Diagnostics = Diagnostics { "diagnostics" },
+                  about: AppAbout? = null, connectDetail: () -> String? = { null }) = SetupDeps(
         discovery, sessions, prober, profiles, facts, runner, engine, gate, tvs, snapshots, ledger,
         FakeLauncherPin(Samples.launcherArtifact()), themes, restorePoint, FakeRestoreNote(), sessionEnd, access, clock, KeyCopy,
-        blobs = blobs, dock = dock, screenLock = { true }, diagnostics = { "diagnostics" },
+        blobs = blobs, dock = dock, screenLock = { true }, diagnostics = diagnostics,
         launchable = tv.cleanyour.core.probe.LaunchableApps { launchable ?: throw tv.cleanyour.core.probe.ProbeException(tv.cleanyour.core.probe.ProbeStage.LAUNCHER, "no answer") },
         log = FlowLog { logLines += it },
         homePrefs = HomePrefs(documents),
@@ -132,6 +133,9 @@ class Harness(val clock: FakeClock = FakeClock(Samples.NOW_MS)) {
         savedWifi = savedWifi,
         store = store,
         homeDecisions = HomeDecisions(documents),
+        candidates = candidates,
+        about = about,
+        connectDetail = connectDetail,
     )
 
     fun setup(scope: CoroutineScope, start: SetupStart = SetupStart.Fresh, store: StoreRules = StoreRules.FULL) = SetupMachine(setupDeps(store = store), scope, start)

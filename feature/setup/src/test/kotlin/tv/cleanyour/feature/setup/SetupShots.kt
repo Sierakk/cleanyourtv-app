@@ -245,6 +245,8 @@ object SetupShots {
         // S2d to S3 probing
         Shot("probing_start") { Setup(SetupState.Probing(tvId, ProbeStage.FACTS, null)) },
         Shot("probing_packages") { Setup(SetupState.Probing(tvId, ProbeStage.PACKAGES, null)) },
+        // Test build: the card before the plan for a list not tested yet
+        Shot("probing_candidate") { Setup(SetupState.Probing(tvId, ProbeStage.PACKAGES, null), connected.copy(candidate = tv.cleanyour.core.flows.CandidateOffer("xiaomi-mitv-mssp1", "#57"))) },
 
         // S3 What we found, with the unknown model, zero, no screen lock and TV-refuses-home variants
         Shot("found_simple") { Setup(found()) },
@@ -263,6 +265,8 @@ object SetupShots {
         Shot("found_starting") { Setup(found(), connected.copy(starting = true)) },
         // D36 (RF-LAUNCHER-240 F1): the plan replaces a home screen app signed with another key.
         Shot("found_replaces_launcher") { Setup(found(fullPlan.copy(summary = fullPlan.summary.copy(replacesLauncher = true)))) },
+        // Issue #275: a TCL Google TV, whose remote's gear, Netflix and YouTube buttons need Google TV's home.
+        Shot("found_tcl_remote_keys") { Setup(found(), connected.copy(tvName = "TCL 55C755", tclRemoteKeys = true)) },
 
         // S3a Customise: Simple with the other groups collapsed; Custom with every group open, the
         // package names and the undo snackbar; the "Why?" sheet
@@ -409,6 +413,10 @@ object SetupShots {
         },
         Shot("stopped_probe_failed") {
             Stopped(card(StopCase.PROBE_FAILED, R.string.stop_probe_failed_title, R.string.stop_probe_failed_body,
+                R.string.stop_probe_failed_primary, R.string.stop_probe_failed_secondary))
+        },
+        Shot("stopped_plan_refused") {
+            Stopped(card(StopCase.PLAN_REFUSED, R.string.stop_plan_refused_title, R.string.stop_plan_refused_body,
                 R.string.stop_probe_failed_primary, R.string.stop_probe_failed_secondary))
         },
 

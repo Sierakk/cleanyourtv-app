@@ -80,6 +80,9 @@ class DefaultEngine(
     private val recentThumbnailMs: Long = 15_000L,
     private val noThumbnailWindowMs: Long = 120_000L,
     private val bootTimeoutMs: Long = 300_000L,
+    // Redacted lines for the diagnostics log (issue #375): only fixed words and the TV's own
+    // package names, never an app the person installed. Defaulted and last, so every caller compiles.
+    private val log: (String) -> Unit = {},
 ) : Engine {
 
     // `fromJournalOnly`: the plan file could not be trusted on resume, so this run holds only the
@@ -373,7 +376,16 @@ class DefaultEngine(
                 if (e.error.isLost()) return HomeOutcome.CONNECTION_LOST else null
             }
             if (focus != null) {
-                if (focus.pkg in section.rollbackIfFocus) return HomeOutcome.WRONG_FOCUS
+                if (focus.pkg in section.rollbackIfFocus) {
+                    // Issues #153, #339, #375, #385: the log said WRONG_FOCUS and nothing about what
+                    // was in front, so no report could tell the setup wizard from Settings or the chooser.
+                    // The TV's own: a system app, or one of the home screens, wizards and settings apps
+                    // the check knows by name (an update can move Google's home screen under /data).
+                    val ownApp = run.snapshot?.packages?.get(focus.pkg)?.system == true || focus.pkg in tv.cleanyour.core.spec.KnownLaunchers.byPackage ||
+                        focus.pkg.value in Denylist.setupWizards || focus.pkg.value == Denylist.FRAMEWORK || focus.pkg.value in SETTINGS_APPS
+                    log("engine: the home check saw ${if (ownApp) focus.flat else "an app you installed"} in front, so the old home screen goes back")
+                    return HomeOutcome.WRONG_FOCUS
+                }
                 homeCheck = focus.pkg == section.expectedHome.pkg
             }
             thumbnail(run, force = false)
@@ -542,6 +554,23 @@ class DefaultEngine(
     // #10, says yes and keeps it on). A check read that errors is never one (disableChecked).
     private fun keptOn(error: AdbError): Boolean = error is AdbError.Policy.ProtectedPackage || error is AdbError.Policy.GuardFailed
 
+    // Issues #80 and #367: on some TVs (a Sony BRAVIA VH2 on Android 12, a TCL C06 on Android 11) the
+    // streamed install ("exec:cmd package install -S") ends in a protocol error every time, within
+    // seconds, while the connection itself stays up. Taken for a lost connection, it paused the run
+    // as "the TV stopped answering", and Carry on met the same install again, for good. With the
+    // session still connected it is the install's own failure: the installed APK is checked (the
+    // stream may have finished before the error), Done when it hashes to the streamed one, else
+    // Failed, and the step's policy decides (the launcher's and the curtain's installs CONTINUE, so
+    // the clean-up goes on and the home screen switch is skipped, never opened without its launcher).
+    private suspend fun streamFailed(run: Run, op: Op.InstallStream, error: AdbError): Outcome = try {
+        when (installedApkCheck(run.session, op)) {
+            Outcome.Ok -> Outcome.Ok
+            else -> Outcome.Failed(error, "$STREAM_FAILED$error")
+        }
+    } catch (e: AdbException) {
+        if (e.error.isLost()) Outcome.Lost(e.error) else Outcome.Failed(error, "$STREAM_FAILED$error")
+    }
+
     // Begin (forced) before the line is sent, Done or Failed before the next Begin.
     private suspend fun perform(run: Run, index: Int, op: Op, rendered: Rendered, prior: Prior?): Outcome {
         journal.append(JournalRecord.Begin(run.plan.id, index, op, rendered.lines.map { it.text }, prior, clock.nowMs()))
@@ -553,6 +582,7 @@ class DefaultEngine(
             // debug_off: the TV closes the socket (5.2), so nothing was read back; the flows confirm
             // with a failed probe of 5555 instead (F11), and the record says it was not verified (R1 R-7).
             if (rendered.privilege == Privilege.SESSION_END && e.error.isLost()) { verified = false; Outcome.Ok }
+            else if (op is Op.InstallStream && e.error is AdbError.Transport.Protocol && run.session.state.value is ConnectionState.Connected) streamFailed(run, op, e.error)
             else if (e.error.isLost()) Outcome.Lost(e.error)
             else Outcome.Failed(e.error, e.error.toString())
         }
@@ -960,6 +990,10 @@ class DefaultEngine(
         // because it runs the TV's inputs (RF-LAUNCHER-250 F1); Done and Manage name it.
         const val PROTECTED = "protected: "
         const val KEPT_TV_INPUT = PROTECTED + Denylist.REASON_TV_INPUT
+        // The journal's Failed text for a streamed install the TV ended with a protocol error while
+        // the connection stayed up (issues #80, #367).
+        const val STREAM_FAILED = "streamed install failed, the TV is still connected: "
+        val SETTINGS_APPS = setOf("com.android.settings", "com.android.tv.settings")
     }
 }
 

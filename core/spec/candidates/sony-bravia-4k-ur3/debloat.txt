@@ -1,0 +1,60 @@
+# DRAFT, NOT TESTED. Sony BRAVIA 4K UR3 (ro.product.model "BRAVIA 4K UR3", device BRAVIA_UR3,
+# products BRAVIA_UR3_UC, BRAVIA_UR3_PA and BRAVIA_UR3_EU, MediaTek), Android 10 (Android TV, API 29),
+# firmware QTG3.200305.006.S97 662301, fingerprint
+# Sony/BRAVIA_UR3_<region>/BRAVIA_UR3:10/QTG3.200305.006.S97/662301:user/release-keys
+# Drafted for cleanyourtv-app issues #42 #73 #90 #113 #228 #246 #255 #269 from the TV reports in
+# those issues, starting from examples/sony-bravia-4k-ur2: the UR2 list is for the same firmware
+# build (QTG3.200305.006.S97 662301) and every package it names is on the UR3 with the same state
+# (the UR2 header's factory-disabled b2b.vendorprotocol, b2b.softap and screnmirroring.com are
+# factory-disabled here too). Nothing has been tried on a UR3 yet.
+#
+# Apply:   TV_HOST=<tv ip> tools/disable.sh examples/sony-bravia-4k-ur3/debloat.txt
+# Undo:    TV_HOST=<tv ip> tools/restore.sh examples/sony-bravia-4k-ur3/debloat.txt
+# Everything is DISABLED, not uninstalled. Comment out any line you want to keep.
+#
+# Stock launcher: com.google.android.tvlauncher. Live TV / tuner app: com.sony.dtv.tvx.
+# setupwraith is installed and the app's reports say it stays on (WIZARD_STAYS_ON); unlike the
+# UR2 header, which names no setup wizard. Not in this list.
+# Keep the com.sony.dtv.tvinput.* services, com.sony.dtv.braviasync*, com.sony.dtv.tvapi,
+# com.sony.dtv.sonysystemservice and the Sony settings apps: they drive HDMI, the tuner, Bravia Sync
+# and the remote. Also kept: com.sony.dtv.irbservice, com.uei.quicksetsdk.sony,
+# com.sony.dtv.remotecontrolsettings (remote set-up), com.google.android.tv.remote.service,
+# com.google.android.marvin.talkback.
+# Already disabled at the factory: com.sony.dtv.b2b.vendorprotocol, com.sony.dtv.b2b.softap,
+# screnmirroring.com.
+# Region extras seen on some UR3 sets (YouView, HbbTV, recording, Freeview) are not in any Sony list
+# and are left alone.
+#
+# The first block is what the app's Sony set already switched off on these TVs in 0.3.3, so it has
+# run on several UR3 sets; the list adds a tested home screen switch once someone lives with it.
+# To check before this goes upstream: Wi-Fi after a restart, the remote (every key, including
+# Input and the mic button), every HDMI input, Live TV, Bravia Sync, casting.
+
+# tracking / ads / recommendations
+tv.samba.ssm                                   # Samba TV (ACR viewing data)
+com.qterics.da.product
+com.sony.dtv.da.service
+com.sonyericsson.idd.agent
+com.sony.dtv.promos
+com.sony.dtv.sonyselect
+com.google.android.tvrecommendations           # only the stock launcher uses it
+com.google.android.feedback
+
+# demo / shop mode
+com.sony.dtv.demosupport
+com.sony.dtv.demosystemsupport
+com.sony.dtv.multiscreendemo
+
+# voice assistant (removes the remote's mic search; skip these three to keep it)
+# com.google.android.katniss
+# com.google.android.tv.assistant
+# com.sony.dtv.assistantadapter
+
+# Chromecast built-in (skip to keep casting)
+# com.google.android.apps.mediashell
+
+# preloaded apps, disabled by choice
+# com.google.android.youtube.tvmusic
+com.google.android.play.games
+# com.google.android.videos
+# com.apple.atve.sony.appletv

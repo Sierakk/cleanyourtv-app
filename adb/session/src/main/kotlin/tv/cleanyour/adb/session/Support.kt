@@ -170,6 +170,25 @@ internal fun classifyConnectFailure(e: Exception): AdbError = when (e) {
     else -> AdbError.Transport.Unreachable
 }
 
+// 0.3.6 (issues #98, #270, #325, #468): the person still sees "unreachable", but the diagnostics log
+// says why. The platform's exception class (java.net and android names are not renamed by R8, the
+// app's own are, so those read "other") and the errno style reason the phone gave, such as
+// "EHOSTUNREACH (No route to host)" or "EPERM (Operation not permitted)". Never the message itself:
+// it names the TV's address and the phone's. The reason's text admits letters, spaces and a few
+// marks only, so no address, port or host name gets through.
+object ConnectFailure {
+    private val ERRNO = Regex("\\b(E[A-Z0-9]{2,15}) \\(([A-Za-z ,'-]{1,48})\\)")
+    private val PLATFORM = listOf("java.", "javax.", "android.", "libcore.")
+    private const val CHAIN = 5
+
+    fun detail(e: Throwable): String {
+        val chain = generateSequence(e) { t -> t.cause?.takeIf { it !== t } }.take(CHAIN).toList()
+        val cls = chain.map { it.javaClass.name }.firstOrNull { n -> PLATFORM.any { n.startsWith(it) } }?.substringAfterLast('.') ?: "other"
+        val errno = chain.firstNotNullOfOrNull { t -> t.message?.let { ERRNO.find(it) } }
+        return if (errno == null) cls else "$cls, ${errno.groupValues[1]} (${errno.groupValues[2]})"
+    }
+}
+
 // Keeps the first cap bytes and remembers that more arrived.
 internal class CappedBuffer(private val cap: Int) {
     private val bytes = ByteArrayOutputStream()

@@ -4,7 +4,11 @@ import tv.cleanyour.core.model.AdbError
 import tv.cleanyour.core.model.AdbException
 import tv.cleanyour.core.model.DeviceFacts
 import tv.cleanyour.core.model.Op
+import tv.cleanyour.core.model.Snapshot
+import tv.cleanyour.core.planner.SwitchOffRule
 import tv.cleanyour.core.probe.ProbeException
+import tv.cleanyour.core.spec.AppNames
+import tv.cleanyour.core.spec.FactsTable
 import tv.cleanyour.core.spec.ProfileResolution
 
 // Stable words for the diagnostics log (issue #2: the log said "(f3)", the R8 name of
@@ -71,9 +75,10 @@ object LogCodes {
         is Op.CurtainCue -> "CurtainCue ${op.stage.name.lowercase()}"
     }
 
-    // How the profile resolved: "exact <id>", "brand set <Brand>" or "none".
+    // How the profile resolved: "exact <id>", "candidate <id>" (test build: a list not tested yet,
+    // tried with the person's agreement), "brand set <Brand>" or "none".
     fun profile(res: ProfileResolution?): String = when (res) {
-        is ProfileResolution.Exact -> "exact ${res.profile.id}"
+        is ProfileResolution.Exact -> "${if (res.profile.isCandidate) "candidate" else "exact"} ${res.profile.id}"
         is ProfileResolution.BrandSureSet -> "brand set ${clean(res.brand, 40)}"
         is ProfileResolution.None, null -> "none"
     }
@@ -81,6 +86,24 @@ object LogCodes {
     // "tv Hisense 55A6H (HiTV-MT9602) sdk 30": the keys a profile matches on. Model names and device
     // codenames are fine to log; the serial is not, and is never read here.
     fun tv(f: DeviceFacts): String = "tv ${clean(f.brand, 40)} ${clean(f.model, 60)} (${clean(f.device, 60)}) sdk ${f.sdk}"
+
+    // One reason the planner gave for refusing a plan (0.3.4, issues #171, #187, #220: the log said
+    // only "plan refused", so the reports could not say why). The planner writes its reasons from
+    // package names and app names. An app the person installed is never named in a report (the TV
+    // report's rule: only system apps and our own new home screen are), so its package, its label and
+    // the name the app shows for it become "an app you installed"; then the text is cleaned like
+    // anything else from the TV.
+    fun reason(text: String, snapshot: Snapshot, facts: FactsTable): String {
+        val theirs = snapshot.packages.filter { (pkg, s) -> pkg != SwitchOffRule.OUR_LAUNCHER && !s.system }
+        val names = theirs.flatMap { (pkg, s) -> listOfNotNull(pkg.value, AppNames.of(pkg, facts, s.label), s.label?.trim()) }
+            .filter { it.length >= 2 }.distinct().sortedByDescending { it.length }
+        var t = text
+        for (n in names) t = t.replace(Regex("(?<![\\w.])${Regex.escape(n)}(?!\\w|\\.\\w)"), NOT_NAMED)
+        return clean(t, REASON_MAX)
+    }
+
+    const val NOT_NAMED = "an app you installed"
+    private const val REASON_MAX = 300
 
     // One line of printable text from the TV (stderr, a model name), at most `max` characters, with
     // addresses, MAC addresses, 16 hex ids and long blobs masked. The app's redactor runs over every

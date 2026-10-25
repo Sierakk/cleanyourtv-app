@@ -210,8 +210,27 @@ object TvReport {
                 if (system.isEmpty()) appendLine()
                 appendLine("Other apps: $others (not named)")
             }
-            Packages.NONE -> appendLine("Apps: ${system.size} system, $others other")
+            Packages.NONE -> {
+                appendLine("Apps: ${system.size} system, $others other")
+                appendSwitchedOff(input)
+            }
         }
+    }
+
+    // Issue #375 (and #253, #275): the problem report named nothing the app had switched off, so a
+    // reply to "the Wi-Fi drops" or "a button stopped working" could not say what to put back. The
+    // change records' list (still off by this app, RunLedger.switchedOffByUs), the TV's own apps by
+    // name, any app the person installed only counted, as everywhere in the reports.
+    private fun StringBuilder.appendSwitchedOff(input: TvReportInput) {
+        val all = input.switchedOffByApp
+        if (all.isEmpty()) return
+        val s = input.snapshot
+        val named = all.filter { nameable(s, it) }.map { it.value }.sorted()
+        val theirs = all.size - named.size
+        appendLine()
+        appendLine("Switched off by this app (${all.size}):")
+        for (line in wrap(named, WRAP)) appendLine(line)
+        if (theirs > 0) appendLine("and $theirs ${if (theirs == 1) "app" else "apps"} you installed (not named)")
     }
 
     // "a, b, c" in lines of at most `width` characters (a longer name gets a line of its own); every

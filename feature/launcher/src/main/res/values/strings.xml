@@ -26,6 +26,7 @@
     <!-- The Dock row's subtitle when rows sit under the dock: the dock's apps, then how many more -->
     <string name="home_row_dock_rows">{names}, plus {count, plural, one {# app} other {# apps}} below</string>
     <string name="home_row_look">Look</string>
+    <string name="home_tcl_remote_keys">On TCL Google TV, the remote\'s Settings (gear), Netflix and YouTube buttons don\'t work with the new home screen. To get them back, choose Use the TV\'s own home screen.</string>
     <string name="home_row_stock">Use the TV\'s own home screen</string>
     <string name="home_row_stock_note">Brings back the TV\'s own home screen. Ours stays installed, so you can switch again.</string>
     <string name="home_drift_banner">The home screen settings on the TV changed since you set them.</string>

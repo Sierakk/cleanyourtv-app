@@ -103,7 +103,12 @@ enum class Quirk { HDMI_SWITCH, HOME_TAKEOVER_SETUPWRAITH, EXTRA_HOME_CLAIMERS, 
 data class PackageEntry(val name: PackageName, val note: String?)
 data class PackageGroup(val id: String, val title: String, val default: GroupDefault, val packages: List<PackageEntry>)
 data class ProfileMatch(val models: List<String>, val devices: List<String>, val brand: String?, val sdkMin: Int?, val sdkMax: Int?, val fingerprintPrefix: String?)
-data class TestedInfo(val by: String?, val firmware: String?, val daysLivedWith: Int?, val rebootTested: Boolean)
+// Test build (0.3.5-test1): `candidate` marks a list made from reports of the same model and not
+// tested yet. Only the test build bundles one (core/spec/candidates, -Pcyt.candidates=true).
+data class TestedInfo(val by: String?, val firmware: String?, val daysLivedWith: Int?, val rebootTested: Boolean, val candidate: Boolean = false)
 data class Profile(val id: String, val match: ProfileMatch, val platform: Platform, val stockLaunchers: List<Component>,
     val liveTv: PackageName?, val setupWraith: PackageName?, val quirks: Set<Quirk>, val groups: List<PackageGroup>,
-    val neverDisable: Set<PackageName>, val suggestedDock: List<PackageName>, val tested: TestedInfo?, val sourceSha256: Sha256)
+    val neverDisable: Set<PackageName>, val suggestedDock: List<PackageName>, val tested: TestedInfo?, val sourceSha256: Sha256) {
+    // Test build: a candidate list (TestedInfo.candidate), offered only after the person agrees.
+    val isCandidate: Boolean get() = tested?.candidate == true
+}
